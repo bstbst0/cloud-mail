@@ -28,15 +28,5 @@ run_worker_first = true
 [triggers]
 crons = ["0 16 * * *"]	#定时任务每天晚上12点执行
 
-
-[vars]
-orm_log = false
-domain = ["20090408.xyz","nowei.me","clhs.dev"]                        # 邮件域名可配置多个 示例: ["example1.com","example2.com"]
-admin = "admin@20090408.xyz"                         # 管理员的邮箱 示例: admin@example.com
-jwt_secret = "Pq8o02mV@L2bC$r9X&N1t"                    # jwt令牌的密钥,随便填一串字符串
-githubClientId = "Ov23likV5kdiSdvCtI1i"                # GitHub OAuth 应用的 Client ID
-githubClientSecret = "2fdcc2347c6fd8ff285b65d9469f5589b91419d2"            # GitHub OAuth 应用的 Client Secret
-githubRedirectUri = "https://mail.20090408.xyz/oauth/github/callback"             # GitHub OAuth 回调地址，例如 https://example.com/oauth/github/callback
-
 [build]
 command = "pnpm --prefix ../mail-vue install && pnpm --prefix ../mail-vue run build"
