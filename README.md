@@ -1,7 +1,7 @@
 <p align="center">
     <img src="doc/demo/logo.png" width="80px" />
     <h1 align="center">Cloud Mail</h1>
-    <p align="center">基於 Cloudflare 的簡潔響應式郵件服務，支援郵件寄送與附件收發 🎉</p> 
+    <p align="center">基於 Cloudflare 的簡潔響應式郵件服務，支援郵件寄送與附件收發</p> 
     <p align="center">
         繁體中文 | <a href="/README-en.md" style="margin-left: 5px">English </a>
     </p>
