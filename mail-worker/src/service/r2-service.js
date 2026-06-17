@@ -20,6 +20,10 @@ const r2Service = {
 		return 'KV';
 	},
 
+	async hasOSS(c) {
+		return await this.storageType(c) !== 'KV';
+	},
+
 	async putObj(c, key, content, metadata) {
 
 		const storageType = await this.storageType(c);

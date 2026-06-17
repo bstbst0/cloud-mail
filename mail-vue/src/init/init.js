@@ -46,6 +46,8 @@ export async function init() {
             routers.forEach(routerData => {
                 router.addRoute('layout', routerData);
             });
+        } else {
+            localStorage.removeItem('token');
         }
 
     } else {

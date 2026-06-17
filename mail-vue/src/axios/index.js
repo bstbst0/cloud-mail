@@ -9,7 +9,12 @@ let http = axios.create({
 
 http.interceptors.request.use(config => {
     const { lang } = useSettingStore();
-    config.headers.Authorization = `${localStorage.getItem('token')}`
+    const token = localStorage.getItem('token')
+    if (token) {
+        config.headers.Authorization = token
+    } else {
+        delete config.headers.Authorization
+    }
     config.headers['accept-language'] = lang
     return config
 })
@@ -71,7 +76,7 @@ http.interceptors.response.use((res) => {
     },
     (error) => {
 
-        if (error.status === 403) {
+        if (error.response?.status === 403) {
             location.reload();
             return;
         }

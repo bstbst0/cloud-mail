@@ -127,17 +127,31 @@ function loadBackground(next) {
     if (settingStore.settings.background) {
 
         const src = cvtR2Url(settingStore.settings.background);
+        if (!src) {
+            next()
+            return
+        }
 
         const img = new Image();
+        let resolved = false;
+        const finish = () => {
+            if (resolved) return;
+            resolved = true;
+            next()
+        }
+        const timeout = setTimeout(finish, 3000);
+
         img.src = src;
 
         img.onload = () => {
-            next()
+            clearTimeout(timeout);
+            finish()
         };
 
         img.onerror = () => {
             console.warn("背景图片加载失败:", img.src);
-            next()
+            clearTimeout(timeout);
+            finish()
         };
 
     } else {

@@ -55,7 +55,22 @@ export default defineConfig(({mode}) => {
             target: 'es2022',
             outDir: env.VITE_OUT_DIR || 'dist',
             emptyOutDir: true,
-            assetsInclude: ['**/*.json']
+            assetsInclude: ['**/*.json'],
+            rollupOptions: {
+                output: {
+                    manualChunks(id) {
+                        if (!id.includes('node_modules')) return;
+                        if (id.includes('element-plus')) return 'vendor-element-plus';
+                        if (id.includes('echarts')) return 'vendor-echarts';
+                        if (id.includes('dexie')) return 'vendor-dexie';
+                        if (id.includes('@iconify')) return 'vendor-iconify';
+                        if (id.includes('vue') || id.includes('pinia')) return 'vendor-vue';
+                        if (id.includes('dayjs') || id.includes('date-time-format-timezone')) return 'vendor-date';
+                        if (id.includes('axios') || id.includes('nprogress')) return 'vendor-network';
+                        return 'vendor';
+                    }
+                }
+            }
         }
     }
 })

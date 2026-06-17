@@ -57,7 +57,7 @@ const settingService = {
 	async get(c, showSiteKey = false) {
 
 		const [settingRow, recordList] = await Promise.all([
-			await this.query(c),
+			this.query(c),
 			verifyRecordService.selectListByIP(c)
 		]);
 
@@ -116,11 +116,9 @@ const settingService = {
 
 		if (background && !background.startsWith('http')) {
 
-			if (!await r2Service.hasOSS(c)) {
-				throw new BizError(t('noOsUpBack'));
-			}
+			const storageType = await r2Service.storageType(c);
 
-			if (!settingRow.r2Domain) {
+			if (storageType !== 'KV' && !settingRow.r2Domain) {
 				throw new BizError(t('noOsDomainUpBack'));
 			}
 
