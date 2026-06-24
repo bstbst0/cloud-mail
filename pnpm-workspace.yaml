@@ -1,0 +1,4 @@
+packages:
+  - mail-vue
+  - mail-worker
+  - mail-rn

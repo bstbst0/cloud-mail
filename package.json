@@ -1,0 +1,11 @@
+{
+  "name": "cloud-mail-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev:mail-vue": "pnpm --dir mail-vue dev",
+    "dev:mail-worker": "pnpm --dir mail-worker dev",
+    "start:mail-rn": "pnpm --dir mail-rn start",
+    "android:mail-rn": "pnpm --dir mail-rn android"
+  }
+}

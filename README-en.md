@@ -127,9 +127,47 @@ cloud-mail
 │   │   ├── main.js			    # Entry JS file
 │   │   └── style.css			# Global styles
 │   ├── package.json			# Project dependencies
-└── └── env.release				# Environment configuration
+│   └── env.release				# Environment configuration
+│
+├─ mail-rn				        # Mobile React Native project
+│   ├── App.tsx			        # App entry and page shell navigation
+│   ├── src/screens		        # Login, mail list, and settings page skeletons
+│   ├── android			        # Android native project directory
+│   ├── ios				        # iOS native project directory
+│   └── package.json		        # Mobile dependencies and scripts
 
 ```
+
+## Mobile App (`mail-rn`)
+
+`mail-rn` is the React Native (CLI) mobile client workspace package.
+
+### Startup prerequisites
+
+- Node.js >= 18
+- Java JDK 17 (Android build)
+- Android Studio + Android SDK + an emulator/device
+- (Optional) Xcode for iOS build on macOS
+
+### Quick start
+
+```bash
+# install workspace dependencies
+pnpm install
+
+# start Metro
+pnpm --dir mail-rn start
+
+# run Android app
+pnpm --dir mail-rn android
+```
+
+### Directory notes
+
+- `mail-rn/App.tsx`: temporary app shell and minimal page navigation (Login, Mail List, Settings)
+- `mail-rn/src/screens/*`: page skeleton components
+- `mail-rn/android`: Android native project directory (reserved)
+- `mail-rn/ios`: iOS native project directory (reserved)
 
 ## Support
 
