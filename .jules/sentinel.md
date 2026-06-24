@@ -1,0 +1,6 @@
+## 2024-05-18 - [CRITICAL] Fix SQL injection in publicService.addUser
+**Vulnerability:** A severe SQL injection vulnerability in `mail-worker/src/service/public-service.js` allowed executing arbitrary SQL queries via user input. The `addUser` function constructed an `INSERT INTO` query by directly interpolating unsanitized `email`, `hash`, `salt`, `type`, `os`, `browser`, `activeIp`, `device`, `activeTime` into the SQL statement string.
+
+**Learning:** This exposes the application to potentially devastating SQL injection attacks, where malicious actors can manipulate user input (e.g. `email`, `os`, `browser`) to execute unintended database commands and potentially alter data or extract sensitive information. Relying on simple string interpolation for SQL queries without any input validation or escaping mechanisms is highly insecure. Drizzle ORM does not automatically sanitize string interpolation passed to Cloudflare D1 `prepare()` commands.
+
+**Prevention:** To prevent SQL injection, we must construct queries using parameterized inputs provided by database engines/frameworks. Instead of manually constructing SQL strings, use `db.prepare(sql).bind(...)`. This approach separates the SQL structure from the data, letting the database handle proper sanitization and mitigating the risk of injection attacks.
