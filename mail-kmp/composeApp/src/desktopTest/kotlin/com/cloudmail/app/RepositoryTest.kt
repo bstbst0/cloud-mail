@@ -1,0 +1,167 @@
+package com.cloudmail.app
+
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.cloudmail.db.MailDatabase
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.*
+import kotlin.test.*
+import java.util.UUID
+
+internal class TestPlatform(private val client: HttpClient, private val attachments: () -> List<OutgoingAttachment> = { emptyList() }) : PlatformServices {
+    override val persistentSecureStorage = false
+    private val secrets = mutableMapOf<String,String>()
+    override fun httpClient() = client
+    override fun databaseDriver() = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { MailDatabase.Schema.create(it) }
+    override fun secret(key: String) = secrets[key]
+    override fun putSecret(key: String, value: String?) { if(value==null) secrets.remove(key) else secrets[key]=value }
+    override fun encrypt(bytes: ByteArray) = bytes.map { (it.toInt() xor 0x5a).toByte() }.toByteArray()
+    override fun decrypt(bytes: ByteArray) = encrypt(bytes)
+    override fun randomId() = UUID.randomUUID().toString()
+    override suspend fun pickAttachments() = attachments()
+    override suspend fun saveAttachment(name:String,mimeType:String,bytes:ByteArray,action:String) {}
+}
+class RepositoryTest {
+    private val account = Account(1, "me@example.com")
+    private fun page(messages:List<Message>, cursor:String="c1", reset:Boolean=false, more:Boolean=false) = SyncPage(messages,listOf(account),cursor,more,reset)
+    @Test fun cursorAndMessageCommitTogetherAndOwnerIsolation() {
+        val platform = TestPlatform(HttpClient(MockEngine { error("Network unused") }))
+        val store = MailStore(platform); store.owner="user-a"
+        store.merge(page(listOf(Message(1,1,text="private")), reset=true))
+        assertEquals("c1", store.cursor()); assertEquals("private", store.messages().single().text)
+        store.owner="user-b"; assertTrue(store.messages().isEmpty()); assertNull(store.cursor())
+        store.owner="user-a"; store.clear(); assertTrue(store.messages().isEmpty()); assertNull(store.cursor())
+    }
+    @Test fun resetPreservesDraftAndQueueIntentAndTombstoneDeduplicates() {
+        val store = MailStore(TestPlatform(HttpClient(MockEngine { error("Network unused") }))); store.owner="u"
+        val message = Message(1,1)
+        store.merge(page(listOf(message), reset=true))
+        store.saveDraft(Draft("draft",1,text="unfinished"))
+        val action = PendingAction("stable-id",1,"star",true); store.queue(action, applyAction(message,action))
+        store.merge(page(listOf(message.copy(read=true)),"c2", reset=true))
+        assertEquals(1,store.messages().size); assertTrue(store.messages().single().starred); assertTrue(store.messages().single().read)
+        assertEquals("unfinished",store.drafts().single().text); assertEquals("stable-id",store.pending().single().operationId)
+        store.merge(page(listOf(message.copy(deleted=true)),"c3")); assertTrue(store.messages().single().deleted)
+    }
+    @Test fun offlineQueueReplaysIdempotentlyThenAuthoritativeSyncAcrossDevices() = runTest {
+        var remote = Message(1,1,text="offline readable")
+        var offline = true
+        val operations = mutableSetOf<String>()
+        val client = HttpClient(MockEngine { request ->
+            assertEquals("raw-token",request.headers[HttpHeaders.Authorization])
+            if(offline) throw java.io.IOException("offline")
+            val result = if(request.url.encodedPath.endsWith("actions")) {
+                val action = MailJson.decodeFromString<PendingAction>((request.body as io.ktor.http.content.TextContent).text)
+                operations += action.operationId; remote=applyAction(remote,action)
+                MailJson.encodeToString(ActionResult(action.operationId,remote))
+            } else MailJson.encodeToString(page(listOf(remote), "next"))
+            respond("{\"code\":200,\"message\":\"success\",\"data\":$result}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType,"application/json"))
+        })
+        val store = MailStore(TestPlatform(client)); store.owner="u"; store.merge(page(listOf(remote),reset=true))
+        val repo = MailRepository(store) { ApiClient(client,"https://cloud.test") { "raw-token" } }
+        repo.action(remote,"read",true,"operation-1")
+        assertTrue(store.messages().single().read); assertEquals("offline readable",store.messages().single().text)
+        assertFailsWith<MailException> { repo.sync() }; assertEquals(1,store.pending().size)
+        offline=false; repo.sync(); assertTrue(store.pending().isEmpty()); assertTrue(remote.read); assertEquals(setOf("operation-1"),operations)
+        val other = MailStore(TestPlatform(client)); other.owner="u"
+        MailRepository(other) { ApiClient(client,"https://cloud.test") { "raw-token" } }.sync()
+        assertEquals(store.messages(),other.messages())
+    }
+    @Test fun sendTimeoutNeverAutomaticallyRetriesAndStatusIsQueryable() = runTest {
+        var posts=0
+        val client=HttpClient(MockEngine { request ->
+            if(request.method==HttpMethod.Post) { posts++; throw java.io.IOException("Response lost after provider accepted") }
+            respond("""{"code":200,"data":{"operationId":"send-id","status":"sent","messageId":8}}""",HttpStatusCode.OK,headersOf(HttpHeaders.ContentType,"application/json"))
+        })
+        val api=ApiClient(client,"https://cloud.test"){"raw"}
+        assertFailsWith<MailException> { api.send(SendRequest("send-id",1,listOf("a@example.com"),emptyList(),emptyList(),"subject","text","",null,emptyList())) }
+        assertEquals(1,posts); assertEquals("sent",api.sendStatus("send-id").status); assertEquals(1,posts)
+    }
+    @Test fun consecutiveOfflineActionsReplayInCreationOrder() {
+        val store = MailStore(TestPlatform(HttpClient(MockEngine { error("Network unused") }))); store.owner="u"
+        val m = Message(1,1)
+        store.queue(PendingAction("zzz",1,"read",true),m.copy(read=true))
+        store.queue(PendingAction("aaa",1,"read",false),m.copy(read=false))
+        assertEquals(listOf("zzz","aaa"),store.pending().map { it.operationId })
+        store.acknowledge(store.pending().first(),m.copy(read=true))
+        assertFalse(store.messages().single().read)
+    }
+    @Test fun allSearchPagesAreFetchedWithFilters() = runTest {
+        val requests=mutableListOf<String>()
+        val client=HttpClient(MockEngine { req ->
+            requests += req.url.toString()
+            val first=req.url.parameters["next"]==null
+            val json=MailJson.encodeToString(listOf(Message(if(first) 2 else 1,1)))
+            respond("{\"code\":200,\"data\":{\"messages\":$json,\"next\":${if(first) "\"1\"" else "null"}}}",HttpStatusCode.OK,headersOf(HttpHeaders.ContentType,"application/json"))
+        })
+        val found=ApiClient(client,"https://cloud.test"){"raw"}.search("words",read=false,hasAttachment=true)
+        assertEquals(listOf(2L,1L),found.map { it.id }); assertEquals(2,requests.size)
+        assertTrue(requests.all { "read=false" in it && "hasAttachment=true" in it })
+    }
+    @Test fun authenticationFailuresRemainTyped() = runTest {
+        val client=HttpClient(MockEngine { respond("denied",HttpStatusCode.Unauthorized) })
+        val error=assertFailsWith<MailException> { ApiClient(client,"https://cloud.test"){"revoked"}.sync(null) }
+        assertEquals(401,error.code)
+    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun delayedDetailCannotWriteIntoReplacementAccount() = runTest {
+        val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val client = HttpClient(MockEngine {
+            started.complete(Unit); release.await()
+            respond("{\"code\":200,\"data\":${MailJson.encodeToString(Message(7, 1, text = "old owner secret"))}}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val store = MailStore(TestPlatform(client)); store.owner = "old"
+        val repo = MailRepository(store) { ApiClient(client, "https://cloud.test") { "old-token" } }
+        val request = async { runCatching { repo.detail(7) } }
+        started.await(); store.owner = "new"; release.complete(Unit)
+        assertIs<CancellationException>(request.await().exceptionOrNull())
+        assertTrue(store.messages().isEmpty())
+        store.owner = "old"; assertTrue(store.messages().isEmpty())
+    }
+    @Test fun delayedRejectedActionCannotMutateReplacementOwnersQueue() = runTest {
+        val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val client = HttpClient(MockEngine {
+            started.complete(Unit); release.await()
+            respond("denied", HttpStatusCode.Forbidden)
+        })
+        val store = MailStore(TestPlatform(client)); store.owner = "old"
+        val repo = MailRepository(store) { ApiClient(client, "https://cloud.test") { "token" } }
+        repo.action(Message(1, 1), "read", true, "same-id")
+        val request = async { runCatching { repo.sync() } }
+        started.await(); store.owner = "new"
+        store.queue(PendingAction("same-id", 1, "star", true), Message(1, 1, text = "new owner", starred = true))
+        release.complete(Unit)
+        assertIs<CancellationException>(request.await().exceptionOrNull())
+        assertEquals("same-id", store.pending().single().operationId)
+        assertEquals("new owner", store.messages().single().text)
+    }
+    @Test fun rejectedActionRetainsIntentWhenAuthoritativeRecoveryIsOffline() = runTest {
+        val client = HttpClient(MockEngine { request ->
+            if (request.method == HttpMethod.Post) respond("denied", HttpStatusCode.Forbidden)
+            else throw java.io.IOException("offline recovery")
+        })
+        val store = MailStore(TestPlatform(client)); store.owner = "u"
+        val repo = MailRepository(store) { ApiClient(client, "https://cloud.test") { "token" } }
+        repo.action(Message(1, 1, text = "cached"), "read", true, "retryable")
+        assertFailsWith<MailException> { repo.sync() }
+        assertEquals("retryable", store.pending().single().operationId)
+        assertEquals("cached", store.messages().single().text)
+    }
+
+    @Test fun attachmentNetworkFailureIsTypedAndRetryCountIsBounded() = runTest {
+        var requests = 0
+        val client = HttpClient(MockEngine { requests++; throw java.io.IOException("offline") })
+        val error = assertFailsWith<MailException> { ApiClient(client, "https://cloud.test") { "token" }.attachment(1) }
+        assertEquals(0, error.code); assertEquals(3, requests)
+    }
+    @Test fun declaredOversizedAttachmentFailsBeforeReadingThePayload() = runTest {
+        val client = HttpClient(MockEngine {
+            respond("", HttpStatusCode.OK, headersOf(HttpHeaders.ContentLength, (26 * 1024 * 1024).toString()))
+        })
+        val error = assertFailsWith<MailException> { ApiClient(client, "https://cloud.test") { "token" }.attachment(1) }
+        assertEquals(413, error.code)
+    }
+
+}

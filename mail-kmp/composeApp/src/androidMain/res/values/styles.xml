@@ -1,0 +1,1 @@
+<resources><style name="CloudMailTheme" parent="android:style/Theme.Material.Light.NoActionBar"><item name="android:windowLightStatusBar">true</item><item name="android:windowActionModeOverlay">true</item><item name="android:colorAccent">#5263B5</item><item name="android:windowBackground">#F8F9FF</item></style></resources>

@@ -27,3 +27,15 @@ mail-vue/dist
 .venv
 
 package-lock.json
+# Kotlin Multiplatform build products and machine-local configuration
+mail-kmp/**/build/
+mail-kmp/.gradle/
+mail-kmp/.kotlin/
+mail-kmp/local.properties
+mail-kmp/**/local.properties
+mail-kmp/iosApp/Pods/
+mail-kmp/iosApp/build/
+mail-kmp/iosApp/**/xcuserdata/
+mail-kmp/iosApp/*.xcworkspace/xcuserdata/
+*.keystore
+*.jks
