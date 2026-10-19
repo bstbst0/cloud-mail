@@ -42,7 +42,18 @@ class BackgroundSync {
             suspend fun revokeSession() {
                 if (encodedSession != null && platform.secret("session") == encodedSession) {
                     platform.putSecret("session", null)
-                    withContext(NonCancellable) { store?.let { MailRepository(it) { error("Session ended") }.clear() } }
+                    withContext(NonCancellable) {
+                        store?.let { revokedStore ->
+                            val revokedOwner = revokedStore.owner
+                            MailRepository(revokedStore) { error("Session ended") }.clearOwnerIf(revokedOwner) {
+                                val current = platform.secret("session")
+                                current == null || runCatching {
+                                    val session = MailJson.decodeFromString<Session>(current)
+                                    "${platform.secret("server")}#${session.userId}" != revokedOwner
+                                }.getOrDefault(false)
+                            }
+                        }
+                    }
                 }
             }
             try {

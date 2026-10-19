@@ -24,10 +24,10 @@ kotlin {
             implementation(libs.ktor.core); implementation(libs.serialization); implementation(libs.coroutines)
         }
         commonTest.dependencies { implementation(kotlin("test")); implementation(libs.coroutines.test); implementation(libs.ktor.mock) }
-        androidMain.dependencies { implementation("androidx.core:core-ktx:1.16.0"); implementation(libs.ktor.okhttp); implementation(libs.sqlite.android); implementation("androidx.activity:activity-compose:1.10.1"); implementation("androidx.work:work-runtime-ktx:2.10.1") }
+        androidMain.dependencies { implementation(libs.androidx.core); implementation(libs.ktor.okhttp); implementation(libs.sqlite.android); implementation(libs.androidx.activity); implementation(libs.androidx.work) }
         iosMain.dependencies { implementation(libs.ktor.darwin); implementation(libs.sqlite.native) }
         val desktopTest by getting { dependencies { implementation(compose.desktop.uiTestJUnit4); implementation(compose.desktop.currentOs); implementation(libs.sqlite.desktop) } }
-        val desktopMain by getting { dependencies { implementation(compose.desktop.currentOs); implementation(libs.ktor.cio); implementation(libs.sqlite.desktop); implementation("net.java.dev.jna:jna-platform:5.17.0"); implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2") } }
+        val desktopMain by getting { dependencies { implementation(compose.desktop.currentOs); implementation(libs.ktor.cio); implementation(libs.sqlite.desktop); implementation(libs.jna.platform); implementation(libs.coroutines.swing) } }
     }
 }
 android {
@@ -53,7 +53,7 @@ compose.desktop {
     application {
         mainClass = "com.cloudmail.app.MainKt"
         jvmArgs += "-Dcloudmail.defaultServerUrl=${configuredServerUrl.get()}"
-        nativeDistributions { targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb); packageName = "Cloud Mail"; packageVersion = "1.0.0" }
+        nativeDistributions { modules("java.sql", "java.naming", "jdk.unsupported", "jdk.crypto.ec"); targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb); packageName = "Cloud Mail"; packageVersion = "1.0.0" }
     }
 }
 

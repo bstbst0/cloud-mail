@@ -20,9 +20,9 @@ internal object AndroidFiles {
     private var pickLauncher: ActivityResultLauncher<Array<String>>? = null
     data class SaveTarget(val name: String, val mime: String)
     private var saveLauncher: ActivityResultLauncher<SaveTarget>? = null
-    private var picker: CancellableContinuation<List<OutgoingAttachment>>? = null
+    @Volatile private var picker: CancellableContinuation<List<OutgoingAttachment>>? = null
     private data class Save(val bytes: ByteArray, val continuation: CancellableContinuation<Unit>)
-    private var saving: Save? = null
+    @Volatile private var saving: Save? = null
     @Volatile private var generation = 0L
     /** Logout invalidates captured IO work as well as currently visible pickers. */
     fun clearSensitiveOperations() {

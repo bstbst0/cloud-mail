@@ -39,7 +39,16 @@ class MailSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
             if (platform.secret("session") != encodedSession) false
             else { platform.putSecret("session", null); true }
         }
-        if (removed) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { MailRepository(store) { error("Session ended") }.clear() }
+        if (removed) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            val revokedOwner = store.owner
+            MailRepository(store) { error("Session ended") }.clearOwnerIf(revokedOwner) {
+                val current = platform.secret("session")
+                current == null || runCatching {
+                    val session = MailJson.decodeFromString<Session>(current)
+                    "${platform.secret("server")}#${session.userId}" != revokedOwner
+                }.getOrDefault(false)
+            }
+        }
     }
     companion object {
         fun schedule(context: Context, intervalMinutes: Long = 15) {

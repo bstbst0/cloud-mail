@@ -1,12 +1,14 @@
 package com.cloudmail.app
 
 import android.annotation.SuppressLint
-import android.graphics.Color
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.ByteArrayInputStream
@@ -14,9 +16,14 @@ import java.io.ByteArrayInputStream
 /** Isolated email renderer: no script, bridges, file access, navigation, forms or mixed content. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable actual fun HtmlMessage(html: String, loadImages: Boolean, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    fun Color.cssColor() = "#" + (toArgb() and 0x00ffffff).toString(16).padStart(6, '0')
+    val foreground = colors.onSurface.cssColor()
+    val background = colors.surface.cssColor()
+    val link = colors.primary.cssColor()
     AndroidView(modifier = modifier, factory = { context ->
         WebView(context).apply {
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
             settings.apply {
                 javaScriptEnabled = false; domStorageEnabled = false; databaseEnabled = false
                 allowFileAccess = false; allowContentAccess = false; setSupportMultipleWindows(false)
@@ -40,7 +47,7 @@ import java.io.ByteArrayInputStream
         val images = if (loadImages) "data: https:" else "data:"
         val csp = "default-src 'none'; script-src 'none'; img-src $images; style-src 'unsafe-inline'; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; media-src 'none'"
         // CSP precedes attacker-controlled markup. JavaScript is additionally disabled at engine level.
-        val content = "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"$csp\"><style>body{font-family:system-ui,sans-serif;overflow-wrap:anywhere;margin:8px}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>$html</body></html>"
+        val content = "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"$csp\"><style>body{font-family:system-ui,sans-serif;overflow-wrap:anywhere;margin:8px;color:$foreground;background-color:$background}a{color:$link}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>$html</body></html>"
         if (view.tag != content) { view.tag = content; view.loadDataWithBaseURL("https://email.invalid/", content, "text/html", "UTF-8", null) }
     }, onRelease = { it.stopLoading(); it.loadUrl("about:blank"); it.destroy() })
 }

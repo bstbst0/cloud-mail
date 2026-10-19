@@ -8,12 +8,14 @@ import kotlinx.coroutines.test.*
 import kotlin.test.*
 
 class ViewModelTest {
+    private val viewModels = mutableListOf<MailViewModel>()
+    private fun newViewModel(platform: PlatformServices) = MailViewModel(platform).also { viewModels += it }
     @BeforeTest fun prepareMain() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-    @AfterTest fun restoreMain() { Dispatchers.resetMain() }
+    @AfterTest fun restoreMain() { viewModels.forEach { it.dispose() }; viewModels.clear(); Dispatchers.resetMain() }
     @Test fun loginSyncReadDraftReplySendAndLogout() = runTest {
         var remote=Message(1,1,fromAddress="sender@example.com",subject="Hello",text="Message body",to=listOf("me@example.com"))
         var sends=0
-        val client=HttpClient(MockEngine { request ->
+        val client=HttpClient(testEngine { request ->
             val data=when {
                 request.url.encodedPath.endsWith("login") -> MailJson.encodeToString(Session("raw",1,"me@example.com",4_000_000_000))
                 request.url.encodedPath.endsWith("sync") -> MailJson.encodeToString(SyncPage(listOf(remote),listOf(Account(1,"me@example.com")),"cursor",false))
@@ -25,7 +27,7 @@ class ViewModelTest {
             }
             respond("{\"code\":200,\"data\":$data}",HttpStatusCode.OK,headersOf(HttpHeaders.ContentType,"application/json"))
         })
-        val platform=TestPlatform(client); val vm=MailViewModel(platform)
+        val platform=TestPlatform(client); val vm=newViewModel(platform)
         vm.login("https://cloud.test","me@example.com","temporary-password"); runCurrent()
         assertNotNull(vm.state.value.session); assertEquals(1,vm.state.value.accounts.size); assertFalse(vm.state.value.loading)
         vm.select(vm.state.value.messages.single()); runCurrent(); assertTrue(vm.state.value.selected!!.read)
@@ -35,7 +37,7 @@ class ViewModelTest {
     }
     @Test fun uncertainSendStaysLockedAndQueriesStatusRatherThanResending() = runTest {
         var posts=0; var gets=0
-        val client=HttpClient(MockEngine { request ->
+        val client=HttpClient(testEngine { request ->
             val data=when {
                 request.url.encodedPath.endsWith("login") -> MailJson.encodeToString(Session("raw",1,"me@example.com",4_000_000_000))
                 request.url.encodedPath.endsWith("sync") -> MailJson.encodeToString(SyncPage(emptyList(),listOf(Account(1,"me@example.com")),"cursor",false))
@@ -46,7 +48,7 @@ class ViewModelTest {
             }
             respond("{\"code\":200,\"data\":$data}",HttpStatusCode.OK,headersOf(HttpHeaders.ContentType,"application/json"))
         })
-        val vm=MailViewModel(TestPlatform(client)); vm.login("https://cloud.test","me@example.com","password");runCurrent()
+        val vm=newViewModel(TestPlatform(client)); vm.login("https://cloud.test","me@example.com","password");runCurrent()
         vm.compose();vm.updateDraft(vm.state.value.composer!!.copy(to="a@example.com")); vm.send(); runCurrent()
         assertEquals("uncertain",vm.state.value.composer!!.sendStatus); assertEquals(1,posts)
         vm.send(); runCurrent(); assertEquals(1,posts);assertEquals(1,gets)
@@ -55,7 +57,7 @@ class ViewModelTest {
     @Test fun slowOldLogoutCannotEraseANewerLogin() = runTest {
         val logoutStarted = CompletableDeferred<Unit>(); val finishLogout = CompletableDeferred<Unit>()
         var loginCount = 0
-        val client = HttpClient(MockEngine { request ->
+        val client = HttpClient(testEngine { request ->
             val data = when {
                 request.url.encodedPath.endsWith("login") -> { loginCount++; MailJson.encodeToString(Session("token-$loginCount", loginCount.toLong(), "user$loginCount@example.com", 4_000_000_000)) }
                 request.url.encodedPath.endsWith("sync") -> MailJson.encodeToString(SyncPage(listOf(Message(loginCount.toLong(), 1, text = "mail-$loginCount")), listOf(Account(1, "me@example.com")), "cursor", false))
@@ -64,7 +66,7 @@ class ViewModelTest {
             }
             respond("{\"code\":200,\"data\":$data}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         })
-        val platform = TestPlatform(client); val vm = MailViewModel(platform)
+        val platform = TestPlatform(client); val vm = newViewModel(platform)
         vm.login("https://cloud.test", "old@example.com", "password"); runCurrent()
         vm.logout(); runCurrent(); logoutStarted.await()
         assertNull(vm.state.value.session)
@@ -77,10 +79,10 @@ class ViewModelTest {
         vm.logout(); runCurrent()
     }
     @Test fun expiredStoredSessionIsRemovedBeforeAnyNetworkOrCachePublication() {
-        val platform = TestPlatform(HttpClient(MockEngine { error("Expired session must not perform requests") }))
+        val platform = TestPlatform(HttpClient(testEngine { error("Expired session must not perform requests") }))
         platform.putSecret("server", "https://cloud.test")
         platform.putSecret("session", MailJson.encodeToString(Session("expired", 1, "me@example.com", 1)))
-        val vm = MailViewModel(platform)
+        val vm = newViewModel(platform)
         assertNull(vm.state.value.session); assertTrue(vm.state.value.messages.isEmpty())
         assertNull(platform.secret("session"))
     }
@@ -92,7 +94,7 @@ class ViewModelTest {
             Message(2, 1, subject = "needle", read = true, receivedAt = "2026-01-10", attachments = listOf(attachment)),
             Message(3, 1, subject = "needle", receivedAt = "2026-01-10"),
             Message(4, 1, subject = "needle", receivedAt = "2025-01-10", attachments = listOf(attachment)))
-        val client = HttpClient(MockEngine { request ->
+        val client = HttpClient(testEngine { request ->
             val data = when {
                 request.url.encodedPath.endsWith("login") -> MailJson.encodeToString(Session("token", 1, "me@example.com", 4_000_000_000))
                 request.url.encodedPath.endsWith("sync") -> MailJson.encodeToString(SyncPage(messages, listOf(Account(1, "me@example.com")), "cursor", false))
@@ -101,7 +103,7 @@ class ViewModelTest {
             }
             respond("{\"code\":200,\"data\":$data}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         })
-        val vm = MailViewModel(TestPlatform(client)); vm.login("https://cloud.test", "me@example.com", "password"); runCurrent()
+        val vm = newViewModel(TestPlatform(client)); vm.login("https://cloud.test", "me@example.com", "password"); runCurrent()
         vm.search("needle", read = false, hasAttachment = true, after = "2026-01-01", before = "2026-02-01")
         advanceTimeBy(2000); runCurrent()
         assertEquals(listOf(1L), vm.state.value.messages.map { it.id }); assertTrue(vm.state.value.offline)
@@ -110,7 +112,7 @@ class ViewModelTest {
     @Test fun openingSearchResultPreservesResultsAndAccountRevocationRemovesThem() = runTest {
         var revoked = false
         val found = Message(1, 1, subject = "match", read = true)
-        val client = HttpClient(MockEngine { request ->
+        val client = HttpClient(testEngine { request ->
             val data = when {
                 request.url.encodedPath.endsWith("login") -> MailJson.encodeToString(Session("token", 1, "me@example.com", 4_000_000_000))
                 request.url.encodedPath.endsWith("sync") -> MailJson.encodeToString(SyncPage(if (revoked) emptyList() else listOf(found, Message(2, 1, subject = "other")), if (revoked) emptyList() else listOf(Account(1, "me@example.com")), "cursor", false))
@@ -121,7 +123,7 @@ class ViewModelTest {
             }
             respond("{\"code\":200,\"data\":$data}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         })
-        val vm = MailViewModel(TestPlatform(client)); vm.login("https://cloud.test", "me@example.com", "password"); runCurrent()
+        val vm = newViewModel(TestPlatform(client)); vm.login("https://cloud.test", "me@example.com", "password"); runCurrent()
         vm.search("match"); advanceTimeBy(301); runCurrent()
         assertEquals(listOf(1L), vm.state.value.messages.map { it.id })
         vm.select(vm.state.value.messages.single()); runCurrent()
@@ -133,14 +135,14 @@ class ViewModelTest {
     }
 
     @Test fun invalidCredentialsExplainTheLoginFailureWithoutExpiredSessionWording() = runTest {
-        val vm = MailViewModel(TestPlatform(HttpClient(MockEngine { respond("denied", HttpStatusCode.Unauthorized) })))
+        val vm = newViewModel(TestPlatform(HttpClient(testEngine { respond("denied", HttpStatusCode.Unauthorized) })))
         vm.login("https://cloud.test", "me@example.com", "wrong"); runCurrent()
         assertNull(vm.state.value.session)
         assertEquals("Sign-in failed. Check your email and password.", vm.state.value.error)
         assertFalse(vm.state.value.loading)
     }
     @Test fun repeatedPickerSelectionsAcceptTenAttachmentsAndRejectTheEleventh() = runTest {
-        val client = HttpClient(MockEngine { request ->
+        val client = HttpClient(testEngine { request ->
             val data = when {
                 request.url.encodedPath.endsWith("login") -> MailJson.encodeToString(Session("token", 1, "me@example.com", 4_000_000_000))
                 request.url.encodedPath.endsWith("sync") -> MailJson.encodeToString(SyncPage(emptyList(), listOf(Account(1, "me@example.com")), "cursor", false))
@@ -150,7 +152,7 @@ class ViewModelTest {
             respond("{\"code\":200,\"data\":$data}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         })
         val picks = mutableListOf(List(5) { OutgoingAttachment("first-$it.txt", "text/plain", "YQ==") }, List(5) { OutgoingAttachment("second-$it.txt", "text/plain", "YQ==") }, listOf(OutgoingAttachment("eleventh.txt", "text/plain", "YQ==")))
-        val vm = MailViewModel(TestPlatform(client) { picks.removeAt(0) })
+        val vm = newViewModel(TestPlatform(client) { picks.removeAt(0) })
         vm.login("https://cloud.test", "me@example.com", "password"); runCurrent(); vm.compose()
         vm.addAttachment(); runCurrent(); assertEquals(5, vm.state.value.composer!!.attachments.size)
         vm.addAttachment(); runCurrent(); assertEquals(10, vm.state.value.composer!!.attachments.size)

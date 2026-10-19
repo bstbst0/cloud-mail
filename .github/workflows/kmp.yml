@@ -3,7 +3,7 @@ name: Cloud Mail native and compatibility checks
 on:
   pull_request:
   push:
-    branches: [main, master, 'feat/**']
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -59,6 +59,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-35 build-tools;35.0.0
+          log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: true
@@ -70,6 +73,14 @@ jobs:
           name: cloud-mail-debug-apk
           path: mail-kmp/composeApp/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-android-validation
+          path: |
+            mail-kmp/composeApp/build/reports/**
+            mail-kmp/composeApp/build/test-results/**
+            mail-kmp/build/reports/dependency-verification/**
 
   desktop:
     strategy:
@@ -134,6 +145,8 @@ jobs:
           path: |
             mail-kmp/composeApp/build/ui-screenshots/**
             mail-kmp/composeApp/build/reports/tests/**
+            mail-kmp/composeApp/build/test-results/**
+            mail-kmp/build/reports/dependency-verification/**
       - name: Stop isolated Worker fixture
         if: always() && runner.os == 'Linux'
         shell: bash
@@ -162,3 +175,11 @@ jobs:
           name: cloud-mail-ios-framework
           path: mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ios-validation
+          path: |
+            mail-kmp/composeApp/build/reports/**
+            mail-kmp/composeApp/build/test-results/**
+            mail-kmp/build/reports/dependency-verification/**

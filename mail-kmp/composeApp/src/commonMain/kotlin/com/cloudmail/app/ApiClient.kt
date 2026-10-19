@@ -19,7 +19,7 @@ class ApiClient(val client: HttpClient, private val server: String, private val 
     companion object {
         fun validatedServer(input: String, allowLocalHttp: Boolean = false): String {
             val url = Url(input.trim())
-            require(url.host.isNotBlank() && "://" in input) { "Enter a complete server URL." }
+            require(url.host.isNotBlank() && input.trim().substringAfter("://", "").substringBefore('/').substringBefore('?').substringBefore('#').isNotBlank()) { "Enter a complete server URL." }
             require(url.protocol == URLProtocol.HTTPS || (allowLocalHttp && url.protocol == URLProtocol.HTTP && url.host in listOf("localhost", "127.0.0.1", "10.0.2.2"))) { "Use an HTTPS Cloud Mail server URL." }
             require(url.user.isNullOrEmpty() && url.password.isNullOrEmpty() && url.parameters.isEmpty() && url.fragment.isEmpty()) { "Server URL cannot contain credentials, queries or fragments." }
             return input.trim().trimEnd('/')
@@ -39,7 +39,7 @@ class ApiClient(val client: HttpClient, private val server: String, private val 
                 if (method == HttpMethod.Get && attempt++ < 2) { delay(250L shl attempt); continue }
                 throw MailException(0, "Cannot reach the server. Your offline data remains available.")
             }
-            if (method == HttpMethod.Get && response.status.value in listOf(429, 502, 503, 504) && attempt++ < 2) { response.bodyAsChannel().cancel(null); delay(250L shl attempt); continue }
+            if (method == HttpMethod.Get && response.status.value in listOf(429, 502, 503, 504) && attempt++ < 2) { response.bodyAsChannel().cancel(null); delay(retryDelay(response, attempt)); continue }
             if (response.status.value !in 200..299) throw MailException(response.status.value, when (response.status.value) { 401 -> "Session expired. Sign in again."; 403 -> "You do not have permission for this operation."; else -> "Server request failed (${response.status.value})." })
             val envelope = try { MailJson.decodeFromString<Envelope<T>>(response.bodyAsText()) } catch (e: Exception) { if(e is kotlinx.coroutines.CancellationException) throw e; throw MailException(500, "The server returned an incompatible response.") }
             if (envelope.code != 200) throw MailException(envelope.code, envelope.message.take(250))
@@ -75,7 +75,7 @@ class ApiClient(val client: HttpClient, private val server: String, private val 
                         throw error
                     }
                     if (received.status.value in listOf(429, 502, 503, 504) && attempt++ < 2) {
-                        received.bodyAsChannel().cancel(null); delay(250L shl attempt); continue
+                        received.bodyAsChannel().cancel(null); delay(retryDelay(received, attempt)); continue
                     }
                     return received
                 }
@@ -102,3 +102,8 @@ class ApiClient(val client: HttpClient, private val server: String, private val 
         }
     }
 }
+
+@PublishedApi
+internal fun retryDelay(response: HttpResponse, attempt: Int): Long =
+    if (response.status.value == 429) response.headers[HttpHeaders.RetryAfter]?.toLongOrNull()?.coerceIn(0, 60)?.times(1000) ?: (250L shl attempt)
+    else 250L shl attempt

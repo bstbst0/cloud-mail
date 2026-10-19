@@ -28,7 +28,10 @@ async function permission(c, userId, key) {
 async function rate(c, bucket, max, seconds) {
  const window = Math.floor(now()/seconds);
  const row = await c.env.db.prepare(`INSERT INTO app_rate_limit(bucket,attempts,expires_at) VALUES(?,1,?) ON CONFLICT(bucket) DO UPDATE SET attempts=attempts+1 RETURNING attempts`).bind(`${bucket}:${window}`,now()+seconds).first();
- if (row.attempts > max) throw new BizError('Too many requests',429);
+ if (row.attempts > max) {
+  c.header('Retry-After',String(Math.max(1,(window+1)*seconds-now())));
+  throw new BizError('Too many requests',429);
+ }
  // Opportunistic bounded cleanup. Contains no credentials or message content.
  await c.env.db.prepare('DELETE FROM app_rate_limit WHERE bucket IN (SELECT bucket FROM app_rate_limit WHERE expires_at<? LIMIT 100)').bind(now()).run();
 }
@@ -109,7 +112,14 @@ const appService = {
   if(q.folder==='inbox'||q.folder==='sent') {conditions.push('e.type=?');args.push(q.folder==='sent'?1:0);}
   else if(q.folder==='starred') conditions.push('EXISTS(SELECT 1 FROM star s WHERE s.user_id=e.user_id AND s.email_id=e.email_id)');
   else if(q.folder) throw new BizError('Invalid folder',400);
-  if(q.q) {if(q.q.length>200) throw new BizError('Query too long',400);conditions.push("(e.subject LIKE ? ESCAPE '\\' OR e.send_email LIKE ? ESCAPE '\\' OR e.recipient LIKE ? ESCAPE '\\' OR e.text LIKE ? ESCAPE '\\' OR e.name LIKE ? ESCAPE '\\' OR e.content LIKE ? ESCAPE '\\' OR e.cc LIKE ? ESCAPE '\\' OR (e.type=1 AND e.bcc LIKE ? ESCAPE '\\'))");const pattern='%'+q.q.replace(/[\\%_]/g,'\\$&')+'%';args.push(...Array(8).fill(pattern));}
+  if(q.q) {
+   if(q.q.length>200) throw new BizError('Query too long',400);
+   // D1 limits LIKE/GLOB pattern bytes. A complete subject plus UUID can exceed
+   // that budget; instr preserves literal substring semantics without patterns.
+   const contains=column=>`instr(lower(COALESCE(${column},'')),lower(?))>0`;
+   conditions.push(`(${['e.subject','e.send_email','e.recipient','e.text','e.name','e.content','e.cc'].map(contains).join(' OR ')} OR (e.type=1 AND ${contains('e.bcc')}))`);
+   args.push(...Array(8).fill(q.q));
+  }
   for(const [key,column] of [['after','>='],['before','<=']]) if(q[key]) {const date=new Date(q[key]);if(!Number.isFinite(date.getTime()))throw new BizError('Invalid date',400);const inclusiveDayEnd=key==='before'&&/^\d{4}-\d{2}-\d{2}$/.test(q[key]);if(inclusiveDayEnd)date.setUTCDate(date.getUTCDate()+1);conditions.push(`e.create_time ${inclusiveDayEnd?'<':column} ?`);args.push(date.toISOString().slice(0,19).replace('T',' '));}
   if(q.read!==undefined) {if(!['true','false'].includes(q.read)) throw new BizError('Invalid read filter',400);conditions.push('e.unread=?');args.push(q.read==='true'?1:0);}
   if(q.hasAttachment!==undefined) {if(!['true','false'].includes(q.hasAttachment)) throw new BizError('Invalid attachment filter',400);conditions.push(`${q.hasAttachment==='false'?'NOT ':''}EXISTS(SELECT 1 FROM attachments x WHERE x.email_id=e.email_id AND x.user_id=e.user_id AND x.type=0)`);}

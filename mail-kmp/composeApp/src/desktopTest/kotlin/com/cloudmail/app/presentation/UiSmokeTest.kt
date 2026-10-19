@@ -5,6 +5,8 @@ package com.cloudmail.app.presentation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.*
@@ -26,7 +28,7 @@ class UiSmokeTest {
     @Test fun compactLoginReadComposeAndSettings() = runDesktopComposeUiTest(width = 420, height = 780) {
         val platform = UiPlatform()
         val vm = MailViewModel(platform)
-        setContent { Box(Modifier.requiredSize(420.dp, 780.dp)) { App(vm) } }
+        setContent { Box(Modifier.requiredSize(420.dp, 780.dp)) { TestApp(vm) } }
         onNodeWithText("Server URL").performTextInput("https://fixture.example")
         onNodeWithText("Account").performTextInput("reader@example.com")
         onNodeWithText("Password").performTextInput("test-only-password")
@@ -54,7 +56,7 @@ class UiSmokeTest {
     @Test fun expandedInboxAndEmptyState() = runDesktopComposeUiTest(width = 1280, height = 900) {
         val platform = UiPlatform()
         val vm = MailViewModel(platform)
-        setContent { Box(Modifier.requiredSize(1280.dp, 900.dp)) { App(vm) } }
+        setContent { Box(Modifier.requiredSize(1280.dp, 900.dp)) { TestApp(vm) } }
         vm.login("https://fixture.example", "reader@example.com", "test-only-password")
         waitUntil(timeoutMillis = 10_000) { vm.state.value.session != null && !vm.state.value.loading }
         onNodeWithText("Your addresses", ignoreCase = true).assertExists()
@@ -68,6 +70,7 @@ class UiSmokeTest {
     @Test fun loadingAndLargeFontsStayReachable() = runDesktopComposeUiTest(width = 320, height = 640) {
         val vm = MailViewModel(UiPlatform())
         setContent {
+            DisposableEffect(vm) { onDispose { vm.dispose() } }
             CloudMailTheme("light", 1.5f) {
                 Box(Modifier.requiredSize(320.dp, 640.dp)) { LoginScreen(AppState(loading = true), vm) }
             }
@@ -79,10 +82,10 @@ class UiSmokeTest {
 
     @Test fun authenticationErrorRemainsRecoverable() = runDesktopComposeUiTest(width = 420, height = 780) {
         val vm = MailViewModel(UiPlatform(loginFailure = true))
-        setContent { Box(Modifier.requiredSize(420.dp, 780.dp)) { App(vm) } }
+        setContent { Box(Modifier.requiredSize(420.dp, 780.dp)) { TestApp(vm) } }
         vm.login("https://fixture.example", "reader@example.com", "wrong-test-password")
         waitUntil(timeoutMillis = 10_000) { !vm.state.value.loading }
-        onNodeWithText("Session expired. Sign in again.").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Sign-in failed. Check your email and password.").performScrollTo().assertIsDisplayed()
         onNodeWithText("Password").assertExists()
         screenshot("login-error")
     }
@@ -90,7 +93,7 @@ class UiSmokeTest {
     @Test fun offlineMailAndRetryUseTheRealViewModel() = runDesktopComposeUiTest(width = 420, height = 780) {
         val platform = UiPlatform()
         val vm = MailViewModel(platform)
-        setContent { Box(Modifier.requiredSize(420.dp, 780.dp)) { App(vm) } }
+        setContent { Box(Modifier.requiredSize(420.dp, 780.dp)) { TestApp(vm) } }
         vm.login("https://fixture.example", "reader@example.com", "test-only-password")
         waitUntil(timeoutMillis = 10_000) { vm.state.value.session != null && !vm.state.value.loading }
         platform.failNetwork = true
@@ -107,7 +110,7 @@ class UiSmokeTest {
 
     @Test fun settingsAndComposerSupportLargeType() = runDesktopComposeUiTest(width = 320, height = 640) {
         val vm = MailViewModel(UiPlatform())
-        setContent { Box(Modifier.requiredSize(320.dp, 640.dp)) { App(vm) } }
+        setContent { Box(Modifier.requiredSize(320.dp, 640.dp)) { TestApp(vm) } }
         vm.login("https://fixture.example", "reader@example.com", "test-only-password")
         waitUntil(timeoutMillis = 10_000) { vm.state.value.session != null && !vm.state.value.loading }
         vm.updateSettings("dark", 1.5f, false)
@@ -124,7 +127,7 @@ class UiSmokeTest {
 
     @Test fun desktopKeyboardActionsWorkWithoutAnInputFocused() = runDesktopComposeUiTest(width = 1280, height = 900) {
         val vm = MailViewModel(UiPlatform())
-        setContent { Box(Modifier.requiredSize(1280.dp, 900.dp)) { App(vm) } }
+        setContent { Box(Modifier.requiredSize(1280.dp, 900.dp)) { TestApp(vm) } }
         vm.login("https://fixture.example", "reader@example.com", "test-only-password")
         waitUntil(timeoutMillis = 10_000) { vm.state.value.session != null && !vm.state.value.loading }
         onRoot().performKeyInput { keyDown(Key.CtrlLeft); pressKey(Key.K); keyUp(Key.CtrlLeft) }
@@ -138,10 +141,16 @@ class UiSmokeTest {
     }
 
     private fun ComposeUiTest.screenshot(name: String) {
-        val bitmap = onRoot().captureToImage().asSkiaBitmap()
+        val bitmap = onAllNodes(isRoot()).onLast().captureToImage().asSkiaBitmap()
         val encoded = Image.makeFromBitmap(bitmap).encodeToData() ?: error("Screenshot encoding failed")
         File("build/ui-screenshots").apply { mkdirs() }.resolve("$name.png").writeBytes(encoded.bytes)
     }
+}
+
+@Composable
+private fun TestApp(vm: MailViewModel) {
+    DisposableEffect(vm) { onDispose { vm.dispose() } }
+    App(vm)
 }
 
 /** Deliberately isolated test account; no production mailbox or network is used. */

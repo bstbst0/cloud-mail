@@ -22,7 +22,7 @@ class AndroidAttachmentLifecycleTest {
         var launches = 0
         override fun launch(input: I, options: ActivityOptionsCompat?) { launches++ }
         override fun unregister() {}
-        override fun getContract(): ActivityResultContract<I, *> = object : ActivityResultContract<I, Unit>() {
+        override val contract: ActivityResultContract<I, *> = object : ActivityResultContract<I, Unit>() {
             override fun createIntent(context: Context, input: I): Intent = error("No real Android picker in a unit test")
             override fun parseResult(resultCode: Int, intent: Intent?) {}
         }

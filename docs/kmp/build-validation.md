@@ -34,4 +34,8 @@ The aapt2 override selects the already installed SDK binary in this constrained 
 
 ## Latest results
 
-The full current-source strict verification run is in progress. No in-progress or historical artifact is claimed as a current passing build. Detailed outcomes, counts and artifact hashes are recorded below after completion.
+Current-source Android Debug APK assembly and Android Lint have completed: lint reports 0 errors and 41 warnings (mostly dependency version suggestions and catalog/style notices before final catalog cleanup). The first Android unit run executed 19 tests with one URL-validation assertion failure; the common owner has repaired that validation and the final suite is rerunning.
+
+Linux DEB packaging completed with strict dependency verification. An actual extracted launcher exposed missing `java.sql.DriverManager` in the minimized runtime; explicitly declaring JDBC/security runtime modules repaired startup. The corrected packaged app launched on Xorg with a visible 800×600 login window; `/workspace/cloud-mail-packaged-login.png` records the actual runtime. Fontconfig and Skiko caches were redirected to writable workspace directories because this sandbox prevents writes to the usual home caches; a TTF-only test font configuration avoids the host OpenAI WOFF2 font's Skia native crash. These are environment settings, not substituted UI or disabled tests.
+
+The full final current-source strict verification run is in progress. No in-progress or historical artifact is claimed as a current passing build. Detailed outcomes, counts and artifact hashes are recorded below after completion.

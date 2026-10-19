@@ -7,6 +7,10 @@ coroutines = "1.10.2"
 serialization = "1.9.0"
 sqldelight = "2.1.0"
 lifecycle = "2.9.4"
+coreKtx = "1.16.0"
+activity = "1.10.1"
+work = "2.10.1"
+jna = "5.17.0"
 [libraries]
 ktor-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
@@ -20,6 +24,11 @@ sqlite-desktop = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "
 sqlite-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
 sqlite-native = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
 lifecycle = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-core = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-activity = { module = "androidx.activity:activity-compose", version.ref = "activity" }
+androidx-work = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
+jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 [plugins]
 kotlin = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

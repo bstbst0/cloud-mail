@@ -13,6 +13,9 @@ class MailRepository(val store: MailStore, private val sessionIsValid: () -> Boo
         val owner = store.owner
         syncLock.withLock { if (store.generation == generation) store.clearOwner(owner) }
     }
+    suspend fun clearOwnerIf(owner: String, allowed: () -> Boolean) = syncLock.withLock {
+        if (allowed()) store.clearOwner(owner)
+    }
     private suspend fun checkSession(generation: Long) {
         currentCoroutineContext().ensureActive()
         if (store.generation != generation || !sessionIsValid()) throw CancellationException("Session changed")

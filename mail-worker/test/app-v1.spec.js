@@ -114,6 +114,9 @@ describe('Native API authentication and resource boundaries', () => {
   const responses=[];
   for(let i=0;i<21;i++) responses.push(await request('/app/v1/login',null,'POST',{email:'user1@example.com',password:'incorrect'}));
   expect(responses.at(-1).code).toBe(429);expect(responses.at(-1).httpStatus).toBe(429);
+  const limited=await raw('/app/v1/login',null,'POST',{email:'user1@example.com',password:'incorrect'});
+  expect(limited.status).toBe(429);expect(limited.headers.get('Retry-After')).toMatch(/^[1-9]\d*$/);
+  expect(Number(limited.headers.get('Retry-After'))).toBeLessThanOrEqual(300);
   for(const query of ['after=not-a-date','read=maybe','hasAttachment=maybe','folder=admin']) expect((await request(`/app/v1/messages?${query}`,tokens[1])).code).toBe(400);
   for(const limit of ['1.5','Infinity','NaN']) for(const path of ['messages','sync']) expect((await request(`/app/v1/${path}?limit=${limit}`,tokens[1])).code).toBe(400);
  });
@@ -201,6 +204,15 @@ describe('D1 transactional sync and offline action reconciliation', () => {
   expect((await request('/app/v1/messages?hasAttachment=true',tokens[1])).data.messages).toEqual([]);
   const first=await request('/app/v1/messages?limit=1',tokens[1]); expect(first.data.next).toBeTruthy();
   const second=await request(`/app/v1/messages?limit=1&next=${encodeURIComponent(first.data.next)}`,tokens[1]); expect(second.data.messages[0].id).not.toBe(first.data.messages[0].id);
+ });
+ it('searches long subjects and literal wildcard characters without D1 LIKE pattern limits',async () => {
+  const subject='Native HTTP E2E 12345678-1234-1234-1234-123456789abc %_測試';
+  await env.db.prepare('UPDATE email SET subject=? WHERE email_id=11').bind(subject).run();
+  for(const query of [subject,subject.toLowerCase(),'%_測試']) {
+   const result=await request(`/app/v1/messages?q=${encodeURIComponent(query)}&`,tokens[1]);
+   expect(result.code).toBe(200);expect(result.data.messages.map(x=>x.id)).toEqual([11]);
+  }
+  expect((await request(`/app/v1/messages?q=${encodeURIComponent('x'.repeat(200))}`,tokens[1])).data.messages).toEqual([]);
  });
 });
 

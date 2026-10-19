@@ -16,6 +16,7 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
     private val repository = MailRepository(store, { sessionJob.isActive && _state.value.session != null }) { api ?: error("Sign in first") }
     private var loginJob: Job? = null
     private var authenticationGeneration = 0L
+    private var closed = false
     private var searchJob: Job? = null
     private var searchActive = false
     private var syncJob: Job? = null
@@ -27,8 +28,10 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
             attach(server, session); publishCache(); refresh()
         } else {
             if (session != null) {
-                store.owner = "$server#${session.userId}"; store.clear(); store.owner = ""
+                val owner = "$server#${session.userId}"
                 platform.putSecret("session", null)
+                val generation = authenticationGeneration
+                viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { withContext(NonCancellable) { repository.clearOwnerIf(owner) { generation == authenticationGeneration || store.owner != owner } } }
             }
             _state.update { it.copy(serverUrl = server) }
         }
@@ -61,11 +64,7 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
             return
         }
         if (unauthorized) {
-            // An expired session cannot leave an unlocked mailbox on disk.
-            val server = _state.value.serverUrl
-            authenticationGeneration++; sessionJob.cancel(); store.clear(); store.owner = ""
-            platform.putSecret("session", null); api = null
-            _state.value = AppState(serverUrl = server, secureStorage = platform.persistentSecureStorage, error = "Session expired. Sign in again.")
+            clearLocalSession("Session expired. Sign in again.")
         }
     }
     fun login(server: String, email: String, password: String) {
@@ -206,15 +205,22 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
     fun setDefaultAccount(id: Long?) = settings(store.settings().copy(defaultAccountId = id))
     fun updateSyncSettings(syncMinutes: Int) { val minutes = syncMinutes.coerceIn(15, 1440); settings(store.settings().copy(syncMinutes = minutes)); platform.configureSync(minutes); startPolling() }
     fun updateGestureSettings(read: String, delete: String) = settings(store.settings().copy(gestureRead = read, gestureDelete = delete))
+    private fun clearLocalSession(error: String? = null): Long {
+        val owner = store.owner
+        val generation = ++authenticationGeneration
+        // Invalidate background credentials before waiting for in-flight cache work.
+        platform.putSecret("session", null)
+        loginJob?.cancel(); sessionJob.cancel(); searchJob?.cancel(); syncJob?.cancel(); searchActive = false
+        store.owner = ""; api = null
+        _state.value = AppState(serverUrl = platform.secret("server") ?: platform.defaultServerUrl, secureStorage = platform.persistentSecureStorage, error = error)
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            withContext(NonCancellable) { repository.clearOwnerIf(owner) { generation == authenticationGeneration || store.owner != owner } }
+        }
+        return generation
+    }
     fun logout() {
         val client = api
-        val generation = ++authenticationGeneration
-        // Revoke local access immediately. Remote revocation may be slow or offline,
-        // and must never erase a subsequent login or use its replacement token.
-        loginJob?.cancel(); sessionJob.cancel(); searchJob?.cancel(); syncJob?.cancel(); searchActive = false
-        store.clear(); store.owner = ""
-        platform.putSecret("session", null); api = null
-        _state.value = AppState(serverUrl = platform.secret("server") ?: platform.defaultServerUrl, secureStorage = platform.persistentSecureStorage)
+        val generation = clearLocalSession()
         viewModelScope.launch {
             try { client?.logout() }
             catch (error: Throwable) {
@@ -223,7 +229,13 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
             }
         }
     }
-    override fun onCleared() { loginJob?.cancel(); sessionJob.cancel(); httpClient.close(); super.onCleared() }
+    /** Hosts without a ViewModelStore must release this model when their UI closes. */
+    fun dispose() {
+        if (closed) return
+        closed = true
+        loginJob?.cancel(); sessionJob.cancel(); viewModelScope.cancel(); httpClient.close()
+    }
+    override fun onCleared() { dispose(); super.onCleared() }
 }
 @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
 private fun encodeAttachment(bytes: ByteArray): String = kotlin.io.encoding.Base64.Default.encode(bytes)
