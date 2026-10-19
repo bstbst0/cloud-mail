@@ -1,0 +1,164 @@
+name: Cloud Mail native and compatibility checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, 'feat/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: |
+            mail-worker/pnpm-lock.yaml
+            mail-vue/pnpm-lock.yaml
+      - name: Install locked dependencies
+        run: |
+          pnpm --dir mail-vue install --frozen-lockfile
+          pnpm --dir mail-worker install --frozen-lockfile
+      - name: Web regression release build
+        run: npm --prefix mail-vue run build
+      - name: Install isolated browser test runtime
+        run: pnpm --dir mail-vue exec playwright-core install --with-deps chromium
+      - name: Select downloaded Chromium
+        working-directory: mail-vue
+        run: node --input-type=module -e "import {chromium} from 'playwright-core'; import {appendFileSync} from 'node:fs'; appendFileSync(process.env.GITHUB_ENV, 'CHROMIUM_PATH=' + chromium.executablePath() + '\n');"
+      - name: Email HTML and private attachment browser regression
+        run: npm --prefix mail-vue test
+      - name: Worker isolated D1, KV, R2 and mocked provider tests
+        run: npm --prefix mail-worker test
+      - name: Whitespace and conflict marker checks
+        run: |
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======\s*$|>>>>>>> )' -- ':!mail-vue/public/tinymce/**'; then exit 1; fi
+      - name: Worker JavaScript syntax checks
+        run: node -e "const {execFileSync}=require('node:child_process'); const paths=execFileSync('git',['ls-files','-z','--','mail-worker/src'],{encoding:'utf8'}).split('\0').filter(p=>p.endsWith('.js')); for(const file of paths) execFileSync(process.execPath,['--check',file],{stdio:'inherit'});"
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Tests and installable APK
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:testDebugUnitTest :composeApp:lintDebug :composeApp:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-debug-apk
+          path: mail-kmp/composeApp/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - uses: pnpm/action-setup@v4
+        if: runner.os == 'Linux'
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: '22'
+      - name: Install isolated Worker integration runtime
+        if: runner.os == 'Linux'
+        run: pnpm --dir mail-worker install --frozen-lockfile
+      - name: Start isolated Worker for native HTTP integration
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          node mail-worker/test/http-fixture.mjs > "$RUNNER_TEMP/cloud-mail-worker-fixture.log" 2>&1 &
+          echo "CLOUD_MAIL_FIXTURE_PID=$!" >> "$GITHUB_ENV"
+          for attempt in {1..30}; do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8789/api/app/v1/accounts || true)
+            if [[ "$status" == "401" ]]; then
+              echo "CLOUD_MAIL_E2E_URL=http://127.0.0.1:8789" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/cloud-mail-worker-fixture.log"
+          exit 1
+      - name: Test and package platform app
+        working-directory: mail-kmp
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a ./gradlew --no-daemon --dependency-verification=strict :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
+          else
+            ./gradlew --no-daemon --dependency-verification=strict :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-desktop-${{ matrix.os }}
+          path: mail-kmp/composeApp/build/compose/binaries/main/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ui-evidence-${{ matrix.os }}
+          path: |
+            mail-kmp/composeApp/build/ui-screenshots/**
+            mail-kmp/composeApp/build/reports/tests/**
+      - name: Stop isolated Worker fixture
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [[ -n "${CLOUD_MAIL_FIXTURE_PID:-}" ]]; then kill "$CLOUD_MAIL_FIXTURE_PID" || true; fi
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Build shared iOS simulator framework and execute native tests
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64 :composeApp:iosSimulatorArm64Test
+      - name: Build unsigned simulator app
+        working-directory: mail-kmp
+        run: xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-ios-framework
+          path: mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**
+          if-no-files-found: error
