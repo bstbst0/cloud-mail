@@ -11,7 +11,7 @@ const saltHashUtils = {
 
 	async hashPassword(password) {
 		const salt = this.generateSalt();
-		const hash = await this.genHashPassword(password, salt);
+		const hash = await this.pbkdf2Password(password, salt);
 		return { salt, hash };
 	},
 
@@ -22,10 +22,21 @@ const saltHashUtils = {
 		return btoa(String.fromCharCode(...hashArray));
 	},
 
-	async verifyPassword(inputPassword, salt, storedHash) {
-		const hash = await this.genHashPassword(inputPassword, salt);
-		return hash === storedHash;
-	},
+    async pbkdf2Password(password,salt) {
+     // Cloudflare Web Crypto supports at most 100,000 PBKDF2 iterations.
+     const key=await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);
+     const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:encoder.encode(salt),iterations:100000},key,256);
+     return 'pbkdf2-sha256$100000$'+btoa(String.fromCharCode(...new Uint8Array(bits)));
+    },
+    async verifyPassword(inputPassword,salt,storedHash) {
+     if(typeof inputPassword!=='string'||typeof salt!=='string'||typeof storedHash!=='string')return false;
+     // Preserve existing accounts: no password reset or silent incompatible hash rewrite.
+     const hash=storedHash.startsWith('pbkdf2-sha256$100000$') ? await this.pbkdf2Password(inputPassword,salt) : await this.genHashPassword(inputPassword,salt);
+     if(hash.length!==storedHash.length)return false;
+     let difference=0;
+     for(let i=0;i<hash.length;i++)difference|=hash.charCodeAt(i)^storedHash.charCodeAt(i);
+     return difference===0;
+    },
 
 	genRandomPwd(length = 8) {
 		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';

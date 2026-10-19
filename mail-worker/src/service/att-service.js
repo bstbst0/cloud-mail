@@ -9,6 +9,9 @@ import { parseHTML } from 'linkedom';
 import { v4 as uuidv4 } from 'uuid';
 import domainUtils from '../utils/domain-uitls';
 import settingService from "./setting-service";
+import BizError from '../error/biz-error';
+import email from '../entity/email';
+import account from '../entity/account';
 
 const attService = {
 
@@ -47,7 +50,7 @@ const attService = {
 		).all();
 	},
 
-	async toImageUrlHtml(c, content) {
+	async toImageUrlHtml(c, content, userId) {
 
 		const { r2Domain } = await settingService.query(c);
 
@@ -64,6 +67,7 @@ const attService = {
 			if (src && src.startsWith('data:image')) {
 				const file = fileUtils.base64ToFile(src);
 				const buff = await file.arrayBuffer();
+                if(buff.byteLength>5*1024*1024)throw new BizError('Inline image too large',413);
 				const cid = uuidv4().replace(/-/g, '');
 				const key = constant.ATTACHMENT_PREFIX + await fileUtils.getBuffHash(buff) + fileUtils.getExtFileName(file.name);
 
@@ -117,14 +121,33 @@ const attService = {
 		}
 
 		//查询已有内嵌url图片信息
+		if(imageDataList.length>10)throw new BizError('Too many inline images',413);
 		const keys = [...new Set(imageDataList.filter(item => item.path).map(item => item.key))];
-		const dbImageList  = await this.selectOneByKeys(c, keys);
+		const dbImageList = keys.length ? await orm(c).select({...att}).from(att).innerJoin(email,and(eq(email.emailId,att.emailId),eq(email.userId,userId),eq(email.isDel,0))).innerJoin(account,and(eq(account.accountId,email.accountId),eq(account.userId,userId),eq(account.isDel,0))).where(and(inArray(att.key,keys),eq(att.userId,userId))).all() : [];
+        if(keys.some(key=>!dbImageList.some(a=>a.key===key)))throw new BizError('Inline attachment not found',404);
+        for(const image of imageDataList.filter(a=>a.path)) {
+         // Provider must never fetch a private URL or attacker-controlled origin.
+         // Send the authorized object bytes instead, preserving private storage access.
+         const obj=await r2Service.getObj(c,image.key);
+         if(!obj)throw new BizError('Inline attachment not found',404);
+         if(obj.size>5*1024*1024) {await obj.body?.cancel?.();throw new BizError('Inline image too large',413);}
+         const raw=await new Response(obj.body).arrayBuffer();
+         if(raw.byteLength>5*1024*1024)throw new BizError('Inline image too large',413);
+         image.buff=raw;
+         const bytes=new Uint8Array(raw);
+         let encoded='';
+         for(let offset=0;offset<bytes.length;offset+=8192)encoded+=String.fromCharCode(...bytes.subarray(offset,offset+8192));
+         image.content=btoa(encoded);
+         delete image.path;
+        }
 
 		//设置给当前附件
 		imageDataList.forEach(image => {
 			dbImageList.forEach(dbImage => {
-				if (image.path && (image.key === dbImage.key)) {
-					image.size = dbImage.size;
+				if (image.key === dbImage.key) {
+                 // Object bytes are authoritative; historical metadata may underreport
+                 // size and must not bypass the combined send attachment budget.
+                 image.size = image.buff?.byteLength ?? dbImage.size;
 					image.filename = dbImage.filename;
 					image.mimeType = dbImage.mimeType;
 					image.contentType = dbImage.mimeType;

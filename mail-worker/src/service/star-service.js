@@ -15,7 +15,7 @@ const starService = {
 		if (!email) {
 			throw new BizError(t('starNotExistEmail'));
 		}
-		if (!email.userId === userId) {
+		if (email.userId !== userId) {
 			throw new BizError(t('starNotExistEmail'));
 		}
 		const exist = await orm(c).select().from(star).where(
@@ -59,6 +59,7 @@ const starService = {
 				and(
 					eq(star.userId, userId),
 					eq(email.isDel, isDel.NORMAL),
+                    eq(email.userId,userId),
 					lt(star.emailId, emailId)))
 			.orderBy(desc(star.emailId))
 			.limit(size)

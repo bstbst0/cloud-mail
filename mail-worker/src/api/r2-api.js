@@ -1,15 +1,10 @@
-import r2Service from '../service/r2-service';
 import app from '../hono/hono';
-
-app.get('/oss/*', async (c) => {
-	const key = c.req.path.split('/oss/')[1];
-	const obj = await r2Service.getObj(c, key);
-	return new Response(obj.body, {
-		headers: {
-			'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
-			'Content-Disposition': obj.httpMetadata?.contentDisposition || null
-		}
-	});
+import attachmentAccess from '../service/attachment-access-service';
+import userContext from '../security/user-context';
+import BizError from '../error/biz-error';
+app.get('/oss/*', async c => {
+ let key;
+ try { key=decodeURIComponent(c.req.path.slice('/oss/'.length)); }
+ catch { throw new BizError('Attachment not found',404); }
+ return attachmentAccess.byKey(c,key,userContext.getUserId(c));
 });
-
-

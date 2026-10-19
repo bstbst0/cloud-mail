@@ -8,18 +8,14 @@ import permService from '../service/perm-service';
 import { t } from '../i18n/i18n'
 import app from '../hono/hono';
 
-const exclude = [
-	'/login',
-	'/register',
-	'/file',
-	'/setting/websiteConfig',
-	'/webhooks',
-	'/init',
-	'/public/genToken',
-	'/oauth',
-	'/passkey/login',
-	'/telegram'
-];
+// Public routes are exact method/path matches; no authentication prefix exemptions.
+const publicRoute = (method, path) =>
+ (method === 'POST' && ['/login','/register','/public/genToken','/webhooks','/passkey/login/options','/passkey/login/verify','/app/v1/login'].includes(path)) ||
+ (method === 'GET' && path === '/setting/websiteConfig') ||
+ (method === 'GET' && /^\/init\/[^/]+$/.test(path)) ||
+ (method === 'GET' && /^\/oauth\/[^/]+\/authorize$/.test(path)) ||
+ (method === 'POST' && /^\/oauth\/[^/]+\/callback$/.test(path)) ||
+ (method === 'GET' && /^\/telegram\/getEmail\/[^/]+$/.test(path));
 
 const requirePerms = [
 	'/email/send',
@@ -93,19 +89,9 @@ app.use('*', async (c, next) => {
 
 	const path = c.req.path;
 
-	if (path.startsWith('/test')) {
-		return await next();
-	}
+	if (publicRoute(c.req.method, path)) return next();
 
-	const index = exclude.findIndex(item => {
-		return path.startsWith(item);
-	});
-
-	if (index > -1) {
-		return await next();
-	}
-
-	if (path.startsWith('/public')) {
+	if (path.startsWith('/public/')) {
 
 		const userPublicToken = await c.env.kv.get(KvConst.PUBLIC_KEY);
 		const publicToken = c.req.header(constant.TOKEN_HEADER);
@@ -125,6 +111,18 @@ app.use('*', async (c, next) => {
 	}
 
 	const { userId, token } = result;
+ if (result.scope === 'app-v1') {
+  const session = await c.env.db.prepare('SELECT s.user_id,u.email,u.type,u.is_del,u.status FROM app_session s JOIN user u ON u.user_id=s.user_id WHERE s.token=? AND s.user_id=? AND s.expires_at>?').bind(token,userId,Math.floor(Date.now()/1000)).first();
+  if (!session || session.is_del || session.status) throw new BizError(t('authExpired'),401);
+  c.set('user',{userId:session.user_id,email:session.email,type:session.type});
+  // Apply the same legacy role gates when app sessions call existing routes.
+  if(requirePerms.includes(path) && session.email!==c.env.admin) {
+   const keys=await permService.userPermKeys(c,userId);
+   if(!permKeyToPaths(keys).includes(path)) throw new BizError(t('unauthorized'),403);
+  }
+  return next();
+ }
+ if (result.scope) throw new BizError(t('authExpired'),401);
 	const authInfo = await c.env.kv.get(KvConst.AUTH_INFO + userId, { type: 'json' });
 
 	if (!authInfo) {
@@ -136,7 +134,7 @@ app.use('*', async (c, next) => {
 	}
 
 	const permIndex = requirePerms.findIndex(item => {
-		return path.startsWith(item);
+		return path === item;
 	});
 
 	if (permIndex > -1) {
@@ -146,7 +144,7 @@ app.use('*', async (c, next) => {
 		const userPaths = permKeyToPaths(permKeys);
 
 		const userPermIndex = userPaths.findIndex(item => {
-			return path.startsWith(item);
+			return path === item;
 		});
 
 		if (userPermIndex === -1 && authInfo.user.email !== c.env.admin) {

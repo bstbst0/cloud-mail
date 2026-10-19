@@ -202,6 +202,17 @@ const loginService = {
 	async login(c, params, noVerifyPwd = false) {
 
 		const { email, password } = params;
+        if(!noVerifyPwd) {
+         if(typeof email!=='string'||typeof password!=='string'||email.length>320||password.length>256)throw new BizError('Invalid credentials',400);
+         // Compatible legacy throttle uses its existing KV binding, not the optional v1 migration.
+         // Edge KV is eventually consistent; native v1 additionally uses an atomic D1 limiter.
+         const input=new TextEncoder().encode(`${c.req.header('cf-connecting-ip')||'local'}:${email.toLowerCase()}:${Math.floor(Date.now()/300000)}`);
+         const digest=await crypto.subtle.digest('SHA-256',input);
+         const key='login-rate:'+Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+         const count=Number(await c.env.kv.get(key))||0;
+         if(count>=20)throw new BizError('Too many requests',429);
+         await c.env.kv.put(key,String(count+1),{expirationTtl:300});
+        }
 
 		if ((!email || !password) && !noVerifyPwd) {
 			throw new BizError(t('emailAndPwdEmpty'));
@@ -261,6 +272,11 @@ const loginService = {
 	},
 
 	async logout(c, userId) {
+        const payload = await JwtUtils.verifyToken(c,c.req.header(constant.TOKEN_HEADER));
+        if(payload?.scope==='app-v1') {
+         await c.env.db.prepare('DELETE FROM app_session WHERE user_id=? AND token=?').bind(userId,payload.token).run();
+         return;
+        }
 		const token = await userContext.getToken(c);
 		const authInfo = await c.env.kv.get(KvConst.AUTH_INFO + userId, { type: 'json' });
 		if (!token || !authInfo?.tokens) {
