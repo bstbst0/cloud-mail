@@ -13,6 +13,17 @@ collect() {
   xcrun simctl shutdown "$device" || true
 }
 trap collect EXIT
+# Unsigned simulator builds need an application identity for real Keychain use.
+# This ad-hoc identity is for disposable CI simulators, not distribution signing.
+cat > "$evidence/app.entitlements" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>application-identifier</key><string>com.cloudmail.app</string>
+<key>keychain-access-groups</key><array><string>com.cloudmail.app</string></array>
+</dict></plist>
+PLIST
+codesign --force --sign - --entitlements "$evidence/app.entitlements" "$app"
 xcrun simctl install "$device" "$app"
 xcrun simctl launch "$device" com.cloudmail.app
 sleep 8

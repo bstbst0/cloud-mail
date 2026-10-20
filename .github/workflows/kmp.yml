@@ -202,7 +202,13 @@ jobs:
         run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64
       - name: Build unsigned simulator app
         working-directory: mail-kmp
-        run: xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO build
+        run: >-
+          xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail
+          -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO
+          SKIP_KOTLIN_GRADLE_BUILD=YES
+          'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosSimulatorArm64/debugFramework'
+          build
       - name: Install and launch actual iOS simulator app
         working-directory: mail-kmp
         run: bash scripts/ios-startup-smoke.sh 'build/ios-simulator/Build/Products/Debug-iphonesimulator/Cloud Mail.app'

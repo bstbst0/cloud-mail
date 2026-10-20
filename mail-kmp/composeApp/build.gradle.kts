@@ -83,5 +83,16 @@ tasks.withType<JavaExec>().configureEach {
 // Kotlin/Native standalone process mode has no usable Keychain bootstrap.
 tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
     standalone.set(false)
+    // Simulator CLI tests have no app identity. Give only this test executable
+    // its own ad-hoc Keychain group; never use a production signing identity.
+    val testEntitlements = layout.projectDirectory.file("src/iosTest/keychain-test.entitlements")
+    inputs.file(testEntitlements)
+    doFirst {
+        val testExecutable = executable
+        providers.exec {
+            commandLine("codesign", "--force", "--sign", "-", "--entitlements",
+                testEntitlements.asFile.absolutePath, testExecutable.absolutePath)
+        }.result.get().assertNormalExitValue()
+    }
     providers.environmentVariable("CLOUD_MAIL_IOS_SIMULATOR").orNull?.let { device.set(it) }
 }
