@@ -27,23 +27,36 @@ class MailStore(private val platform: PlatformServices) {
     fun saveMessage(message: Message) { var merged = if (message.deleted) message.copy(text = "", html = "", attachments = emptyList(), inlineAttachments = emptyList(), cachedHtmlSource = "") else message; pending().filter { it.messageId == message.id }.forEach { merged = applyAction(merged, it) }; put("message", message.id.toString(), merged) }
     /** A sync page and its cursor commit together. Reset clears messages but preserves local intentions. */
     fun merge(page: SyncPage) = db.transaction {
+        // Keep the old ownership map until revoked intentions have been removed.
+        // A reset otherwise erases the only account association of queued actions.
+        val cachedMessages = messages().associateBy { it.id }
+        val allowedAccounts = page.accounts.map { it.id }.toSet()
+        val revokedIds = cachedMessages.values.filter { it.accountId !in allowedAccounts }.map { it.id }.toSet() +
+            page.messages.filter { message ->
+                message.accountId !in allowedAccounts &&
+                    (message.accountId != 0L || cachedMessages[message.id]?.accountId !in allowedAccounts)
+            }.map { it.id }
+        pending().filter { it.messageId in revokedIds }.forEach { dropAction(it) }
+        val queued = pending().groupBy { it.messageId }
         if (page.reset) db.cacheQueries.clearKind(owner, "message")
+        revokedIds.forEach { db.cacheQueries.remove(owner, "message", it.toString()) }
         db.cacheQueries.clearKind(owner, "account")
         page.accounts.forEach { put("account", it.id.toString(), it) }
-        val allowedAccounts = page.accounts.map { it.id }.toSet()
-        val cachedMessages = messages().associateBy { it.id }
-        val queued = pending().groupBy { it.messageId }
-        cachedMessages.values.filter { it.accountId !in allowedAccounts }.forEach { revoked ->
-            db.cacheQueries.remove(owner, "message", revoked.id.toString())
-            queued[revoked.id].orEmpty().forEach { dropAction(it) }
-        }
         drafts().filter { it.accountId !in allowedAccounts }.forEach { deleteDraft(it.id) }
         page.messages.forEach { message ->
-            val cached = cachedMessages[message.id]
-            var merged = if (message.deleted) message.copy(text = "", html = "", attachments = emptyList(), inlineAttachments = emptyList(), cachedHtmlSource = "")
-                else if (cached != null && cached.cachedHtmlSource == message.html && cached.cachedHtmlSource.isNotEmpty()) message.copy(html = cached.html, cachedHtmlSource = cached.cachedHtmlSource) else message
-            queued[message.id].orEmpty().forEach { merged = applyAction(merged, it) }
-            put("message", merged.id.toString(), merged)
+            // Tombstones never receive optimistic overlays or retain mail content.
+            // An ordinary deletion keeps only its still-authorized local account
+            // association, so a later page does not discard a legitimate undo.
+            if (message.accountId !in allowedAccounts) {
+                val knownAccount = if (message.accountId == 0L) cachedMessages[message.id]?.accountId?.takeIf { it in allowedAccounts } else null
+                put("message", message.id.toString(), Message(message.id, knownAccount ?: 0, deleted = true))
+            } else {
+                val cached = cachedMessages[message.id]?.takeIf { it.accountId in allowedAccounts }
+                var merged = if (message.deleted) message.copy(text = "", html = "", attachments = emptyList(), inlineAttachments = emptyList(), cachedHtmlSource = "")
+                    else if (cached != null && cached.cachedHtmlSource == message.html && cached.cachedHtmlSource.isNotEmpty()) message.copy(html = cached.html, cachedHtmlSource = cached.cachedHtmlSource) else message
+                queued[message.id].orEmpty().forEach { merged = applyAction(merged, it) }
+                put("message", merged.id.toString(), merged)
+            }
         }
         put("cursor", "cursor", page.cursor)
     }

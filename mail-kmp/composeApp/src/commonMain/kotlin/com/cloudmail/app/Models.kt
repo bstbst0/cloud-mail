@@ -27,7 +27,7 @@ import kotlinx.serialization.Serializable
 data class AppState(
     val serverUrl: String = "", val session: Session? = null, val accounts: List<Account> = emptyList(),
     val messages: List<Message> = emptyList(), val selected: Message? = null, val folder: String = "inbox",
-    val query: String = "", val loading: Boolean = false, val error: String? = null, val offline: Boolean = false,
+    val query: String = "", val loading: Boolean = false, val searching: Boolean = false, val error: String? = null, val offline: Boolean = false,
     val drafts: List<Draft> = emptyList(), val composer: Draft? = null, val sending: Boolean = false, val sendStatus: String? = null,
     val theme: String = "system", val textScale: Float = 1f, val remoteImages: Boolean = false,
     val selectedAccountId: Long? = null, val defaultAccountId: Long? = null,

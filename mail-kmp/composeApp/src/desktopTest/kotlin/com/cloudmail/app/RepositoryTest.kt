@@ -221,4 +221,44 @@ class RepositoryTest {
         assertTrue(store.messages().isEmpty()); assertNull(store.cursor())
     }
 
+    @Test fun ownershipRevocationPurgesRestoreIntentAndDraftWithAndWithoutCursorReset() {
+        for (reset in listOf(false, true)) {
+            val store = MailStore(TestPlatform(HttpClient(testEngine { error("Network unused") }))); store.owner = "u"
+            val retained = Account(2, "retained@example.com")
+            val revoked = Message(1, 1, subject = "private subject", text = "private text", html = "<p>private</p>", attachments = listOf(Attachment(1, "private.txt")))
+            val allowed = Message(2, 2, text = "retained")
+            store.merge(SyncPage(listOf(revoked, allowed), listOf(account, retained), "before", false))
+            store.saveDraft(Draft("revoked-draft", 1, text = "private draft"))
+            store.saveDraft(Draft("retained-draft", 2, text = "retained draft"))
+            store.queue(PendingAction("restore-revoked", 1, "delete", false), revoked)
+            store.queue(PendingAction("star-retained", 2, "star", true), allowed.copy(starred = true))
+            store.merge(SyncPage(listOf(Message(1, 0, deleted = true), allowed), listOf(retained), "after", false, reset))
+            val tombstone = store.messages().single { it.id == 1L }
+            assertTrue(tombstone.deleted, "reset=$reset must not resurrect an ownership tombstone")
+            assertEquals("", tombstone.text); assertEquals("", tombstone.html); assertEquals("", tombstone.subject)
+            assertTrue(tombstone.attachments.isEmpty()); assertTrue(tombstone.inlineAttachments.isEmpty()); assertEquals("", tombstone.cachedHtmlSource)
+            assertEquals(listOf(2L), store.messages().filterNot { it.deleted }.map { it.id })
+            assertEquals(listOf("star-retained"), store.pending().map { it.operationId })
+            assertTrue(store.messages().single { it.id == 2L }.starred)
+            assertEquals(listOf("retained-draft"), store.drafts().map { it.id })
+            assertEquals("after", store.cursor())
+        }
+    }
+
+    @Test fun deletionTombstoneKeepsAuthorizedUndoIntentWithoutMakingItVisible() {
+        val store = MailStore(TestPlatform(HttpClient(testEngine { error("Network unused") }))); store.owner = "u"
+        val message = Message(1, 1, text = "owned message")
+        store.merge(page(listOf(message)))
+        store.queue(PendingAction("undo", 1, "delete", false), message)
+        store.merge(page(listOf(Message(1, 0, deleted = true)), "deleted"))
+        assertTrue(store.messages().single().deleted)
+        assertEquals("", store.messages().single().text)
+        assertEquals(listOf("undo"), store.pending().map { it.operationId })
+        store.merge(page(listOf(Message(1, 0, deleted = true)), "deleted-again", reset = true))
+        assertTrue(store.messages().single().deleted)
+        assertEquals(listOf("undo"), store.pending().map { it.operationId })
+        store.acknowledge(store.pending().single(), message)
+        assertEquals(message, store.messages().single()); assertTrue(store.pending().isEmpty())
+    }
+
 }

@@ -117,7 +117,7 @@ class IosPlatform : PlatformServices {
     override fun configureSync(minutes: Int) { NSUserDefaults.standardUserDefaults.setInteger(minutes.coerceIn(15, 1440).toLong(), forKey = "sync-minutes") }
     override fun notifyMail(messages: List<Message>) = IosNotifications.show(this, messages)
 }
-internal fun secureRandom(count: Int): ByteArray = ByteArray(count).also { bytes -> bytes.usePinned { check(SecRandomCopyBytes(kSecRandomDefault, count.toULong(), it.addressOf(0).reinterpret()) == errSecSuccess) { "Secure randomness unavailable." } } }
+internal fun secureRandom(count: Int): ByteArray = ByteArray(count).also { bytes -> bytes.usePinned { check(SecRandomCopyBytes(kSecRandomDefault, count.toULong(), it.addressOf(0)) == errSecSuccess) { "Secure randomness unavailable." } } }
 internal fun NSData.bytesArray(): ByteArray = if (length == 0uL) ByteArray(0) else bytes!!.reinterpret<ByteVar>().readBytes(length.toInt())
 internal fun ByteArray.nsData(): NSData = if (isEmpty()) NSData() else usePinned { NSData.create(bytes = it.addressOf(0), length = size.toULong()) }
 actual fun createPlatformServices(): PlatformServices = IosPlatform()

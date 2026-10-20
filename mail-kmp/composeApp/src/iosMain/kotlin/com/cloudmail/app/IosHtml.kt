@@ -22,7 +22,8 @@ import platform.darwin.NSObject
     val delegate = remember { object : NSObject(), WKNavigationDelegateProtocol {
         override fun webView(webView: WKWebView, decidePolicyForNavigationAction: WKNavigationAction, decisionHandler: (WKNavigationActionPolicy) -> Unit) {
             val url = decidePolicyForNavigationAction.request.URL?.absoluteString
-            decisionHandler(if (url == "about:blank" && decidePolicyForNavigationAction.navigationType == WKNavigationType.WKNavigationTypeOther) WKNavigationActionPolicy.WKNavigationActionPolicyAllow else WKNavigationActionPolicy.WKNavigationActionPolicyCancel)
+            // loadHTMLString uses an isolated about:blank document; every external navigation is denied.
+            decisionHandler(if (url == "about:blank") WKNavigationActionPolicy.WKNavigationActionPolicyAllow else WKNavigationActionPolicy.WKNavigationActionPolicyCancel)
         }
     } }
     var previous by remember { mutableStateOf("") }

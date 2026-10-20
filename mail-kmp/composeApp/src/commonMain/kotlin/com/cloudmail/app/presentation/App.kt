@@ -135,7 +135,7 @@ internal fun MailWorkspace(state: AppState, vm: MailViewModel) {
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         if (state.offline) StatusBanner("Offline · Your saved mail is available. Changes will sync when connected.", false, vm::refresh)
                         state.error?.let { StatusBanner(it, true, { if (showSearch) search() else vm.refresh() }, vm::clearError) }
-                        if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        if (state.loading || state.searching) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (showSearch) {
                             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(12.dp).focusRequester(searchFocus), placeholder = { Text("Search subject, people and message content") }, leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = { IconButton(onClick = { query = ""; unreadOnly = false; attachmentsOnly = false; after = ""; before = ""; vm.search(""); showSearch = false }) { Icon(Icons.Default.Close, "Close search") } }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { search() }))
                             FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -236,7 +236,7 @@ private fun ListHeader(state: AppState, vm: MailViewModel, onSearch: (() -> Unit
 private fun MessageList(state: AppState, vm: MailViewModel, onDelete: (Message) -> Unit) {
     val haptics = LocalHapticFeedback.current
     if (state.messages.isEmpty()) {
-        Box(Modifier.fillMaxSize()) { if (state.loading) CircularProgressIndicator(Modifier.align(Alignment.Center)) else EmptyPane(if (state.query.isBlank()) "You're all caught up" else "No matching messages", if (state.query.isBlank()) "New mail will appear here. Pull your cloud into view with Refresh." else "Try another name or keyword.", Icons.Default.Inbox, vm::refresh) }
+        Box(Modifier.fillMaxSize()) { if (state.loading || state.searching) CircularProgressIndicator(Modifier.align(Alignment.Center)) else EmptyPane(if (state.query.isBlank()) "You're all caught up" else "No matching messages", if (state.query.isBlank()) "New mail will appear here. Pull your cloud into view with Refresh." else "Try another name or keyword.", Icons.Default.Inbox, vm::refresh) }
     } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
         items(state.messages, key = { it.id }) { message ->
             var contextMenu by remember(message.id) { mutableStateOf(false) }

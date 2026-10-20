@@ -94,9 +94,11 @@ internal object IosNotifications {
         val center = UNUserNotificationCenter.currentNotificationCenter()
         messages.filter { !it.read && !it.deleted && it.id.toString() !in seen }.forEach { message ->
             val content = UNMutableNotificationContent().apply {
-                title = "Cloud Mail"; body = "A new message arrived."
-                sound = UNNotificationSound.defaultSound
-                userInfo = mapOf("messageId" to message.id.toString())
+                // Explicit Objective-C setters avoid inherited read-only property shadowing.
+                setTitle("Cloud Mail")
+                setBody("A new message arrived.")
+                setSound(UNNotificationSound.defaultSound)
+                setUserInfo(mapOf("messageId" to message.id.toString()))
             }
             val request = UNNotificationRequest.requestWithIdentifier("$owner#${message.id}", content, null)
             center.addNotificationRequest(request) { _ -> }

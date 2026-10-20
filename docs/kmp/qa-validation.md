@@ -105,6 +105,23 @@ The backend runner separately completed a real HTTP Python smoke test on the iso
 
 The preceding run on `10c849e` also exposed three missing classpath descriptor checksums and setup-android's obsolete default `tools` package. These were repaired before the `c8b1c6` checkpoint. The build owner subsequently added independently checked official Google aapt2 classifier/POM entries and Compose Desktop host POMs for the next run. Strict verification remains enabled. Android/iOS/Desktop validation reports, test XML and verification reports are uploaded even after failure so subsequent defects remain reviewable. Feature-branch push runs were removed; pull-request updates still run the matrix without duplicate push-triggered jobs.
 
+### Completed 2026-10-20 hosted verification
+
+[Run 39345486581](https://github.com/bstbst0/cloud-mail/actions/runs/39345486581), commit `64fd512c0bbeab87dc0b91f2de87b475e3eb1f48`, completed with five passing jobs and an iOS toolchain-verification failure. The actual test-result XML archives were downloaded and parsed, rather than inferring counts from the green job badge.
+
+| Platform/job | Executed result | Published artifact |
+|---|---|---|
+| Linux x64 Desktop | **46 passed, zero failed/skipped**; real Worker HTTP integration executed; all seven Compose UI tests passed; DEB packaging passed | Desktop package artifact `12230279065`; test/screenshots artifact `12231411272` |
+| Windows x64 Desktop | **45 passed, one skipped**; all seven Compose UI tests passed; MSI packaging passed | Package `12230687836`; test/screenshots `12231495650` |
+| macOS ARM64 Desktop | **45 passed, one skipped**; all seven Compose UI tests passed; DMG packaging passed | Package `12231086546`; test/screenshots `12230777749` |
+| Android | **19 unit tests passed**, zero failed/skipped; lint and installable debug APK build passed | APK `12231017925`; validation reports `12230373939` |
+| Worker/Web | **36 Worker tests and six browser security tests passed**; existing Vue release build passed | Job logs on the linked run |
+| iOS | Blocked before Kotlin source compilation by the missing strict checksum for `kotlin-native-prebuilt-2.2.20-macos-aarch64.tar.gz` | Failure/verification reports; no framework or app success claimed |
+
+The single Windows/macOS skip is the explicitly Linux-hosted `WorkerHttpIntegrationTest`, not a skipped UI test. Each Desktop host uploaded twelve PNGs. Android lint reported zero errors and 36 non-fatal warnings, mainly dependency freshness and style; native Android Keystore/device interaction is not proven by JVM unit tests. Building an MSI/DMG/DEB is not proof of installation, signing or notarization. macOS Intel and iOS simulator/device execution remain separately unverified at this checkpoint.
+
+For the next iOS run, the build owner downloaded the official macOS ARM64/x64 Kotlin/Native compiler archives, calculated their SHA-256 and compared them with the published SHA-1 values before adding the strict metadata entries. This is a toolchain integrity repair, not evidence that iOS source compilation or runtime tests passed. The earlier cancelled Apple jobs were explicitly reported by GitHub as not acquired after multiple attempts due to ARM64 runner capacity; the `64fd512` Apple jobs did acquire real macOS ARM64 runners.
+
 The 2026-10-19 metadata review found missing Windows/macOS Skiko host checksums. The build runner added Windows x64, macOS x64 and macOS ARM64 JAR/POM entries from official Maven Central and checked their bytes against published digests. iOS KLIB entries are present. This repairs the identified static gap; it does not prove that every target's transitive resolution or compilation succeeds. Keep strict verification enabled and review any newly rejected artifact instead of using lenient/off modes or blanket trusted groups. See [GitHub-hosted runner architecture](https://docs.github.com/en/actions/reference/runners/github-hosted-runners): current `macos-latest` is ARM64, matching `iosSimulatorArm64`.
 
 This Linux workspace cannot prove an Xcode/macOS build or Windows installation. Android, desktop compilation/UI and shared Kotlin test evidence are recorded by the agents that run those commands in the final implementation report. Real Resend delivery, platform credential stores on each OS, mobile permission dialogs, APNs/FCM, app signing, accessibility with a screen reader and cross-device use against a deployed migration require the release checks below.

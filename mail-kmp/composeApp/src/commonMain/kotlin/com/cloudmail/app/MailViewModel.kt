@@ -19,6 +19,7 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
     private var closed = false
     private var searchJob: Job? = null
     private var searchActive = false
+    private var searchGeneration = 0L
     private var syncJob: Job? = null
     init {
         val server = platform.secret("server") ?: platform.defaultServerUrl
@@ -54,11 +55,11 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
         val messages = cached.values.filter { !it.deleted && (_state.value.selectedAccountId == null || it.accountId == _state.value.selectedAccountId) && (if (_state.value.folder == "star") it.starred else it.folder == _state.value.folder) }.sortedWith(compareByDescending<Message> { it.receivedAt }.thenByDescending { it.id })
         _state.update { old -> old.copy(drafts = store.drafts(), accounts = store.accounts(), messages = if (searchActive) old.messages.mapNotNull { found -> cached[found.id] }.filter { !it.deleted } else messages, selected = old.selected?.let { selected -> cached[selected.id]?.takeUnless { it.deleted } }, theme = settings.theme, textScale = settings.textScale, remoteImages = settings.remoteImages, defaultAccountId = settings.defaultAccountId, gestureRead = settings.gestureRead, gestureDelete = settings.gestureDelete, syncMinutes = settings.syncMinutes, dynamicColor = settings.dynamicColor, preferHtml = settings.preferHtml) }
     }
-    private suspend fun report(error: Throwable) {
+    private suspend fun report(error: Throwable, preserveBusy: Boolean = false) {
         currentCoroutineContext().ensureActive()
         if (error is CancellationException) throw error
         val unauthorized = error is MailException && error.code == 401
-        _state.update { it.copy(error = error.message ?: "Something went wrong. Try again.", offline = error is MailException && error.code == 0, loading = false, sending = false) }
+        _state.update { it.copy(error = error.message ?: "Something went wrong. Try again.", offline = error is MailException && error.code == 0, loading = if (preserveBusy) it.loading else false, sending = if (preserveBusy) it.sending else false) }
         if (unauthorized && _state.value.session == null) {
             _state.update { it.copy(error = "Sign-in failed. Check your email and password.") }
             return
@@ -94,17 +95,20 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
         }
     }
     fun clearError() { _state.update { it.copy(error = null) } }
-    fun setFolder(folder: String) { searchJob?.cancel(); searchActive = false; _state.update { it.copy(folder = folder, selected = null, query = "") }; publishCache() }
+    fun setFolder(folder: String) { searchGeneration++; searchJob?.cancel(); searchActive = false; _state.update { it.copy(folder = folder, selected = null, query = "", searching = false) }; publishCache() }
     fun selectFolder(folder: String) = setFolder(folder)
-    fun setAccount(id: Long?) { searchJob?.cancel(); searchActive = false; _state.update { it.copy(selectedAccountId = id, selected = null, query = "") }; publishCache() }
+    fun setAccount(id: Long?) { searchGeneration++; searchJob?.cancel(); searchActive = false; _state.update { it.copy(selectedAccountId = id, selected = null, query = "", searching = false) }; publishCache() }
     fun search(query: String, read: Boolean? = null, hasAttachment: Boolean? = null, after: String? = null, before: String? = null) {
-        searchJob?.cancel(); _state.update { it.copy(query = query) }
+        val generation = ++searchGeneration
+        searchJob?.cancel()
         searchActive = query.isNotBlank() || read != null || hasAttachment != null || after != null || before != null
+        _state.update { it.copy(query = query, searching = searchActive) }
         if (!searchActive) { publishCache(); return }
         searchJob = sessionScope.launch {
             delay(300)
-            try { val result = repository.search(query, read, hasAttachment, after, before, _state.value.folder, _state.value.selectedAccountId).filter { m -> !m.deleted && (_state.value.selectedAccountId == null || m.accountId == _state.value.selectedAccountId) && (if (_state.value.folder == "star") m.starred else m.folder == _state.value.folder) }; currentCoroutineContext().ensureActive(); _state.update { it.copy(messages = result, offline = false, loading = false) } }
-            catch (error: Throwable) { currentCoroutineContext().ensureActive(); _state.update { it.copy(messages = store.messages().filter { m -> !m.deleted && (_state.value.selectedAccountId == null || m.accountId == _state.value.selectedAccountId) && (if (_state.value.folder == "star") m.starred else m.folder == _state.value.folder) && (read == null || m.read == read) && (hasAttachment == null || m.attachments.isNotEmpty() == hasAttachment) && (after.isNullOrBlank() || m.receivedAt.take(10) >= after) && (before.isNullOrBlank() || m.receivedAt.take(10) <= before) && listOf(m.subject, m.fromAddress, m.to.joinToString(), m.text).any { it.contains(query, true) } }) }; report(error) }
+            try { val result = repository.search(query, read, hasAttachment, after, before, _state.value.folder, _state.value.selectedAccountId).filter { m -> !m.deleted && (_state.value.selectedAccountId == null || m.accountId == _state.value.selectedAccountId) && (if (_state.value.folder == "star") m.starred else m.folder == _state.value.folder) }; currentCoroutineContext().ensureActive(); _state.update { it.copy(messages = result, offline = false) } }
+            catch (error: Throwable) { currentCoroutineContext().ensureActive(); _state.update { it.copy(messages = store.messages().filter { m -> !m.deleted && (_state.value.selectedAccountId == null || m.accountId == _state.value.selectedAccountId) && (if (_state.value.folder == "star") m.starred else m.folder == _state.value.folder) && (read == null || m.read == read) && (hasAttachment == null || m.attachments.isNotEmpty() == hasAttachment) && (after.isNullOrBlank() || m.receivedAt.take(10) >= after) && (before.isNullOrBlank() || m.receivedAt.take(10) <= before) && listOf(m.subject, m.fromAddress, m.to.joinToString(), m.text).any { it.contains(query, true) } }) }; report(error, preserveBusy = true) }
+            finally { if (generation == searchGeneration) _state.update { it.copy(searching = false) } }
         }
     }
     fun select(message: Message?) {
@@ -210,7 +214,7 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
         val generation = ++authenticationGeneration
         // Invalidate background credentials before waiting for in-flight cache work.
         platform.putSecret("session", null)
-        loginJob?.cancel(); sessionJob.cancel(); searchJob?.cancel(); syncJob?.cancel(); searchActive = false
+        loginJob?.cancel(); sessionJob.cancel(); searchJob?.cancel(); syncJob?.cancel(); searchActive = false; searchGeneration++
         store.owner = ""; api = null
         _state.value = AppState(serverUrl = platform.secret("server") ?: platform.defaultServerUrl, secureStorage = platform.persistentSecureStorage, error = error)
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {

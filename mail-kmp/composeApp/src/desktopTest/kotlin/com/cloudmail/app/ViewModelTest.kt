@@ -161,4 +161,27 @@ class ViewModelTest {
         vm.logout(); runCurrent()
     }
 
+    @Test fun deferredSearchShowsProgressAndEmptyQueryCancelsWithoutStaleResults() = runTest {
+        var started = CompletableDeferred<Unit>(); var release = CompletableDeferred<Unit>()
+        val client = HttpClient(testEngine { request ->
+            val data = when {
+                request.url.encodedPath.endsWith("login") -> MailJson.encodeToString(Session("token", 1, "me@example.com", 4_000_000_000))
+                request.url.encodedPath.endsWith("sync") -> MailJson.encodeToString(SyncPage(listOf(Message(1, 1, text = "cached inbox")), listOf(Account(1, "me@example.com")), "cursor", false))
+                request.url.encodedPath.endsWith("messages") -> { val gate = release; started.complete(Unit); gate.await(); "{\"messages\":[],\"next\":null}" }
+                request.url.encodedPath.endsWith("logout") -> "null"
+                else -> error("Unexpected route")
+            }
+            respond("{\"code\":200,\"data\":$data}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val vm = newViewModel(TestPlatform(client)); vm.login("https://cloud.test", "me@example.com", "password"); runCurrent()
+        vm.search("missing"); assertTrue(vm.state.value.searching); assertFalse(vm.state.value.loading)
+        advanceTimeBy(301); runCurrent(); started.await(); assertTrue(vm.state.value.searching)
+        release.complete(Unit); runCurrent(); assertFalse(vm.state.value.searching); assertTrue(vm.state.value.messages.isEmpty())
+        started = CompletableDeferred(); release = CompletableDeferred()
+        vm.search("another"); advanceTimeBy(301); runCurrent(); started.await(); assertTrue(vm.state.value.searching)
+        vm.search(""); assertFalse(vm.state.value.searching); assertEquals(listOf(1L), vm.state.value.messages.map { it.id })
+        release.complete(Unit); runCurrent(); assertFalse(vm.state.value.searching); assertEquals(listOf(1L), vm.state.value.messages.map { it.id })
+        vm.logout(); runCurrent()
+    }
+
 }
