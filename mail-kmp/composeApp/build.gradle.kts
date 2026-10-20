@@ -15,6 +15,7 @@ kotlin {
     androidTarget { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
     jvm("desktop") { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
     iosArm64 { binaries.framework { baseName = "CloudMail"; isStatic = true } }
+    iosX64 { binaries.framework { baseName = "CloudMail"; isStatic = true } }
     iosSimulatorArm64 { binaries.framework { baseName = "CloudMail"; isStatic = true } }
     sourceSets {
         commonMain.dependencies {

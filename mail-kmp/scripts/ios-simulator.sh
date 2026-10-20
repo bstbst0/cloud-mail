@@ -5,10 +5,13 @@ boot_cloud_mail_simulator() {
   if [[ -z "${CLOUD_MAIL_IOS_SIMULATOR:-}" ]]; then
     xcrun simctl list devices available --json > composeApp/build/ios-smoke/devices.json
     CLOUD_MAIL_IOS_SIMULATOR=$(python3 - composeApp/build/ios-smoke/devices.json <<'PY'
-import json, re, sys
+import json, os, re, sys
 with open(sys.argv[1]) as stream:
     devices = json.load(stream)['devices']
+runtime_prefix = os.environ.get('CLOUD_MAIL_IOS_RUNTIME_PREFIX', '')
 for runtime, values in devices.items():
+    if runtime_prefix and not runtime.startswith(runtime_prefix):
+        continue
     if '.iOS-' not in runtime:
         continue
     for device in values:

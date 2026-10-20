@@ -112,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -180,7 +180,12 @@ jobs:
           if [[ -n "${CLOUD_MAIL_FIXTURE_PID:-}" ]]; then kill "$CLOUD_MAIL_FIXTURE_PID" || true; fi
 
   ios:
-    runs-on: macos-latest
+    # The ARM64 hosted pool failed to acquire runners. Keep ARM64 compilation,
+    # and run actual Simulator/Keychain checks on the independent Intel pool.
+    runs-on: macos-15-intel
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      CLOUD_MAIL_IOS_RUNTIME_PREFIX: com.apple.CoreSimulator.SimRuntime.iOS-18-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -196,18 +201,18 @@ jobs:
           source scripts/ios-simulator.sh
           boot_cloud_mail_simulator
           echo "CLOUD_MAIL_IOS_SIMULATOR=$CLOUD_MAIL_IOS_SIMULATOR" >> "$GITHUB_ENV"
-      - name: Build shared iOS simulator framework
+      - name: Build ARM64 and Intel iOS simulator frameworks
         id: ios_framework
         working-directory: mail-kmp
-        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64 :composeApp:linkDebugFrameworkIosX64
       - name: Build unsigned simulator app
         working-directory: mail-kmp
         run: >-
           xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail
           -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO
+          -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO ARCHS=x86_64
           SKIP_KOTLIN_GRADLE_BUILD=YES
-          'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosSimulatorArm64/debugFramework'
+          'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosX64/debugFramework'
           build
       - name: Install and launch actual iOS simulator app
         working-directory: mail-kmp
@@ -218,12 +223,14 @@ jobs:
         run: |
           source scripts/ios-simulator.sh
           boot_cloud_mail_simulator
-          ./gradlew --no-daemon --dependency-verification=strict :composeApp:iosSimulatorArm64Test
+          ./gradlew --no-daemon --dependency-verification=strict :composeApp:iosX64Test
       - uses: actions/upload-artifact@v4
         if: always() && steps.ios_framework.outcome == 'success'
         with:
           name: cloud-mail-ios-framework
-          path: mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**
+          path: |
+            mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**
+            mail-kmp/composeApp/build/bin/iosX64/debugFramework/**
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
