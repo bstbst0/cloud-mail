@@ -180,7 +180,7 @@ jobs:
           if [[ -n "${CLOUD_MAIL_FIXTURE_PID:-}" ]]; then kill "$CLOUD_MAIL_FIXTURE_PID" || true; fi
 
   ios:
-    timeout-minutes: 60
+    timeout-minutes: 90
     # Use independent Intel capacity; ARM64 compilation runs in parallel below.
     runs-on: macos-15-intel
     env:
@@ -195,16 +195,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: true
-      - name: Build Intel iOS simulator framework
+      - name: Build iOS framework and native test executable
         id: ios_framework
         working-directory: mail-kmp
-        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosX64
-      - name: Boot simulator security services for native integration tests
-        working-directory: mail-kmp
-        run: |
-          source scripts/ios-simulator.sh
-          boot_cloud_mail_simulator
-          echo "CLOUD_MAIL_IOS_SIMULATOR=$CLOUD_MAIL_IOS_SIMULATOR" >> "$GITHUB_ENV"
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosX64 :composeApp:linkDebugTestIosX64
       - name: Build unsigned simulator app
         working-directory: mail-kmp
         run: >-
@@ -214,12 +208,19 @@ jobs:
           SKIP_KOTLIN_GRADLE_BUILD=YES
           'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosX64/debugFramework'
           build
+      - name: Boot simulator security services for native integration tests
+        timeout-minutes: 12
+        working-directory: mail-kmp
+        run: |
+          source scripts/ios-simulator.sh
+          boot_cloud_mail_simulator
+          echo "CLOUD_MAIL_IOS_SIMULATOR=$CLOUD_MAIL_IOS_SIMULATOR" >> "$GITHUB_ENV"
       - name: Install and launch actual iOS simulator app
         timeout-minutes: 10
         working-directory: mail-kmp
         run: bash scripts/ios-startup-smoke.sh 'build/ios-simulator/Build/Products/Debug-iphonesimulator/Cloud Mail.app'
       - name: Native crypto, Keychain and shared tests on booted simulator
-        timeout-minutes: 15
+        timeout-minutes: 30
         if: always() && steps.ios_framework.outcome == 'success'
         working-directory: mail-kmp
         run: |

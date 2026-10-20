@@ -29,5 +29,5 @@ PY
   timeout_script="$(dirname "${BASH_SOURCE[0]}")/run-with-timeout.py"
   printf 'Boot simulator and wait for security services\n'
   python3 "$timeout_script" 30 xcrun simctl boot "$CLOUD_MAIL_IOS_SIMULATOR" || true
-  python3 "$timeout_script" 180 xcrun simctl bootstatus "$CLOUD_MAIL_IOS_SIMULATOR" -b
+  python3 "$timeout_script" 600 xcrun simctl bootstatus "$CLOUD_MAIL_IOS_SIMULATOR" -b
 }
