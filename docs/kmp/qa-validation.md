@@ -1,6 +1,6 @@
 # QA evidence and reproducible checks
 
-Initial verification: 2026-10-13. Acceptance/CI review updated 2026-10-19. Environment: isolated Linux workspace, Node 24.19.0. No production credentials, deployed databases, object buckets, DNS/MX, or external mail recipients were used. Current native build results belong in [build-validation.md](build-validation.md); the final cross-component result belongs in `implementation-report.md`. Checked-in tests and CI configuration alone are not passing results.
+Initial verification: 2026-10-13. Acceptance/CI review updated 2026-10-20. Environment: isolated Linux workspace, Node 24.19.0, plus the explicitly identified hosted GitHub Actions jobs below. No production credentials, deployed databases, object buckets, DNS/MX, or external mail recipients were used. Current native build results belong in [build-validation.md](build-validation.md); the final cross-component result belongs in `implementation-report.md`. Checked-in tests and CI configuration alone are not passing results.
 
 ## Worker integration suite
 
@@ -29,7 +29,7 @@ The sandbox grants local network access for the Workers runtime's loopback servi
 
 Observed runs: original baseline 3/3 passed; integrated suite 19/19 passed; expanded suite 25/25 passed; quota/rate-limit/legacy-data expansion 28/28 passed; final attachment-resource/password-compatibility suite 31/31 passed (26 app tests, 2 credential tests and 3 original tests). These tests verify backend and provider simulation, not an installed Android/iOS/Desktop app using a deployed server.
 
-Latest completed Worker verification, reported by the backend runner at 2026-10-19 14:21 UTC: **35/35 tests passed across three files, exit 0, 23.92 seconds**. See [backend-implementation.md](backend-implementation.md). This includes authorized inline-image bytes/DTOs, Unicode attachment keys decoded exactly once, deleted inline parents, CRLF Message-ID rejection, and equality between the provider's outgoing Message-ID header and the persisted sent copy. Later source changes require a fresh result; historical counts must not be silently carried forward.
+The 2026-10-19 14:21 UTC Worker checkpoint passed 35/35 tests. The subsequent completed verification passed **36/36 tests across three files**, also confirmed by hosted CI on commit `c8b1c6062c30adbad842560c36633aaa78e545f2`. See [backend-implementation.md](backend-implementation.md). This includes authorized inline-image bytes/DTOs, Unicode attachment keys decoded exactly once, deleted inline parents, CRLF Message-ID rejection, equality between the provider's outgoing Message-ID header and the persisted sent copy, and long/literal/Unicode search queries. Later source changes require a fresh result; historical counts must not be silently carried forward.
 
 ## Web compatibility checks
 
@@ -90,6 +90,20 @@ The backend runner separately completed a real HTTP Python smoke test on the iso
 ## CI and unverified environments
 
 `.github/workflows/kmp.yml` includes Android APK/unit tests and lint, Linux/Windows/macOS desktop tests and packaging, macOS iOS framework/native tests and unsigned simulator app build, Worker integration tests, Web build and browser tests, Gradle wrapper validation, strict dependency verification, JavaScript syntax checks and static whitespace/conflict-marker checks. Linux desktop UI tests run under Xvfb; screenshots and test reports are uploaded as CI evidence. The YAML parser accepted the workflow, all current Worker source files passed `node --check`, and `git diff --check` passed. Creating a workflow is not evidence that a hosted run passed.
+
+### Actual hosted CI checkpoint
+
+[PR #19 run 39269479721](https://github.com/bstbst0/cloud-mail/actions/runs/39269479721), commit `c8b1c6062c30adbad842560c36633aaa78e545f2`, is an observed run, not a future plan. Logs were inspected on 2026-10-20. This checkpoint predates later fixes and must not be presented as their validation.
+
+| Job | Observed result | What the log proves |
+|---|---|---|
+| Worker/Web | Passed | Existing Vue release build completed; Chromium security tests 6/6 passed; Worker tests 36/36 passed; static checks passed. |
+| Linux Desktop | Failed | Kotlin/native desktop compilation reached tests; 45 tests completed with two failures: oversized-attachment early rejection and expanded empty-state assertion. Packaging was gated by the failed tests. |
+| Android | Failed | SDK setup succeeded after explicitly replacing the removed `tools` package. Resource processing stopped on missing strict-verification entries for the AGP aapt2 Linux JAR/POM. No hosted APK or test pass was established. |
+| Windows Desktop | Failed | SQLDelight generation stopped on the missing strict-verification entry for `desktop-jvm-windows-x64-1.9.1.pom`. No Windows compilation/package pass was established. |
+| iOS / macOS Desktop | Cancelled | Jobs did not produce Apple build/test logs. Cancellation is not a passing or failing native compilation. |
+
+The preceding run on `10c849e` also exposed three missing classpath descriptor checksums and setup-android's obsolete default `tools` package. These were repaired before the `c8b1c6` checkpoint. The build owner subsequently added independently checked official Google aapt2 classifier/POM entries and Compose Desktop host POMs for the next run. Strict verification remains enabled. Android/iOS/Desktop validation reports, test XML and verification reports are uploaded even after failure so subsequent defects remain reviewable. Feature-branch push runs were removed; pull-request updates still run the matrix without duplicate push-triggered jobs.
 
 The 2026-10-19 metadata review found missing Windows/macOS Skiko host checksums. The build runner added Windows x64, macOS x64 and macOS ARM64 JAR/POM entries from official Maven Central and checked their bytes against published digests. iOS KLIB entries are present. This repairs the identified static gap; it does not prove that every target's transitive resolution or compilation succeeds. Keep strict verification enabled and review any newly rejected artifact instead of using lenient/off modes or blanket trusted groups. See [GitHub-hosted runner architecture](https://docs.github.com/en/actions/reference/runners/github-hosted-runners): current `macos-latest` is ARM64, matching `iosSimulatorArm64`.
 

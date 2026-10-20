@@ -82,6 +82,32 @@ jobs:
             mail-kmp/composeApp/build/test-results/**
             mail-kmp/build/reports/dependency-verification/**
 
+  android-smoke:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloud-mail-debug-apk
+          path: android-artifact
+      - name: Enable emulator hardware acceleration
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: bash mail-kmp/scripts/android-startup-smoke.sh android-artifact/composeApp-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-android-emulator-evidence
+          path: mail-kmp/composeApp/build/android-smoke/**
+
   desktop:
     strategy:
       fail-fast: false

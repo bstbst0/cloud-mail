@@ -60,6 +60,7 @@ class UiSmokeTest {
         vm.login("https://fixture.example", "reader@example.com", "test-only-password")
         waitUntil(timeoutMillis = 10_000) { vm.state.value.session != null && !vm.state.value.loading }
         onNodeWithText("Your addresses", ignoreCase = true).assertExists()
+        onNodeWithContentDescription("Search all mail").assertIsDisplayed()
         onNodeWithText("A little space to focus").assertExists()
         screenshot("inbox-expanded")
         vm.setFolder("sent")

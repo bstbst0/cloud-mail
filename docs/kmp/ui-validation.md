@@ -14,12 +14,13 @@ The restricted test host required writable Skiko/cache directories and a test-on
 
 `UiSmokeTest.kt` uses a real MailViewModel, in-memory SQLDelight and Ktor MockEngine. It explicitly sizes its Compose desktop test scenes at 320 × 640, 420 × 780 and 1280 × 900, and includes login, inbox, detail, reply composition, settings, light/dark, 150% type, offline/retry and keyboard commands.
 
-The first complete native UI run executed all seven fixtures: six passed and the expanded-layout assertion found two “YOUR ADDRESSES” nodes. The closed modal drawer was still composed beside the permanent expanded sidebar. The app now composes drawer content only below the expanded breakpoint, removing the duplicated navigation from that layout. A rerun is pending; the original failure is retained in this record.
+The first complete native UI run executed all seven fixtures: six passed and the expanded-layout assertion found two “YOUR ADDRESSES” nodes. The closed modal drawer was still composed beside the permanent expanded sidebar. The app now composes drawer content only below the expanded breakpoint, removing the duplicated navigation from that layout. The next complete run passed all seven UI fixtures. The original failure is retained in this record. Screenshot inspection then identified that expanded mode hid the top bar without providing a visible search action. A search button was added to the expanded message-list header, with a displayed-action assertion; the final targeted UI run also passed all seven fixtures, including the new displayed-search assertion (JUnit XML timestamp `2026-10-20T00:06:54.895Z`).
 
 Actual captures inspected from that run:
 
 | Capture | Inspection |
 | --- | --- |
+| [Expanded inbox](screenshots/inbox-expanded.png) | 1280 × 900; permanent sidebar, message list and reading pane have distinct widths, visible Search, and no duplicated navigation. |
 | [Compact inbox](screenshots/inbox-compact-light.png) | 420 × 780; sender, subject, timestamp, star and Compose remain distinct and readable. |
 | [Message detail](screenshots/message-detail-compact.png) | Metadata and body fit, and reply actions wrap into available width. |
 | [Reply composer](screenshots/composer-compact.png) | From/To/subject/editor and pinned save/discard actions remain reachable. |

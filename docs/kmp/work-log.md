@@ -25,3 +25,17 @@ Each final result is recorded in implementation-report.md; running a test does n
 
 - Initial browser mail security suite: 4/4 passed in system Chromium (allowlist, no preprocessing tracker requests, sandbox/CSP, remote consent, text escaping).
 - Android SDK acquisition underway; Java 21 available. Linux cannot execute Xcode/iOS/macOS/Windows packaging; macOS/Windows CI must verify those platforms.
+
+
+## 2026-10-19–20: Integration, real runtime validation and PR
+
+- Preserved source on `feat/cloud-mail-kmp` in separate Worker, KMP and Web/validation commits. Created Draft PR https://github.com/bstbst0/cloud-mail/pull/19 after the operator restored GitHub write authorization. No merge, production deployment or remote migration was performed.
+- Worker validation grew to 36 passing tests. Fixed actual-byte inline attachment limits, Unicode object/CID mapping, invalid JWT expiries, wire/persisted Message-ID agreement and D1's short LIKE-pattern limit. Long literal searches now use bounded owner-filtered substring predicates. Rate responses include Retry-After.
+- Added a localhost-only Miniflare fixture using the actual Worker, synthetic schema and official migration parser. Outbound Worker requests are denied. Native CIO/repository flow passed actual HTTP authentication, isolation, synchronization, offline replay, two devices, internal send with attachment, idempotent replay, reply, search, deletion and revocation.
+- Fixed session generation/owner races, shared-lock logout/background cleanup, secure-session invalidation before cleanup, native-host ViewModel disposal, deterministic coroutine fixtures and bounded cancellable rate-limit waiting. All 29 repository/ViewModel/contract cases passed.
+- Actual attachment regression exposed eager Ktor body buffering. Changed to `prepareGet().execute` so size checks precede reading and the 25 MiB streaming limit is effective. Declared and undeclared oversized-body tests both passed.
+- Repaired compact/large-type layouts, duplicate expanded navigation semantics and expanded Search access. Seven real Compose UI tests passed; sanitized screenshots were inspected and preserved in `docs/kmp/screenshots`.
+- Android 19 tests and lint passed; current APK signature validated. Linux DEB was built and its bundled executable actually launched. Initial package startup exposed missing JDBC modules in the jlink runtime; explicit modules fixed it. A separate actual SQLite-file/cipher close/reopen test passed for offline content, drafts, attachments, pending actions, cursor and logout clearing.
+- Environment-specific Skiko extraction/font cache paths were made writable only in test invocations. Restricted host default WOFF2 font caused a Skia native crash; a test-only TrueType font configuration restored runtime validation. Production font configuration was not changed.
+- Existing Vue release build and all 6 Chromium security tests passed again. Hosted Worker/Web CI also passed. Actual native CI revealed removed Android `tools` SDK package and host-specific strict checksum gaps; repaired without relaxing verification. Apple/Windows/macOS outcomes remain tracked in the PR and QA report, not inferred from Linux.
+- Added bundled license texts, iOS icon assets and a hosted disposable Android emulator startup check. Apple compilation, emulator execution, signing, real provider delivery and platform/manual release checks must be reported only after actual completion.

@@ -1,6 +1,6 @@
 # Cloud Mail KMP implementation report
 
-Integration checkpoint: 2026-10-19 (Asia/Taipei). This branch is under active validation and is suitable for a **draft** pull request. It is not a claim that all release acceptance criteria have passed. No production deployment, migration, external test mail, DNS/MX change or production-data mutation has been performed.
+Integration checkpoint: 2026-10-20 (Asia/Taipei). Review is available in [Draft PR #19](https://github.com/bstbst0/cloud-mail/pull/19). Local verification is complete; hosted platform verification is still being resolved. It is not a claim that all release acceptance criteria have passed. No production deployment, migration, external test mail, DNS/MX change or production-data mutation has been performed.
 
 ## Delivered source
 
@@ -31,17 +31,17 @@ Public R2/S3 bucket or custom-domain exposure must be closed by the operator; au
 
 | Item | Evidence at this checkpoint | Status |
 | --- | --- | --- |
-| Worker routes, D1/KV/R2, mocked provider | Last completed run: 33 passing tests (28 app, 2 credential, 3 original); subsequent fixture/threading changes being rerun | Implemented; final rerun pending |
-| Vue build | Release build completed; 6 real Chromium security tests passed | Verified at prior integration checkpoint |
-| Shared/desktop Kotlin | Production sources compiled; actual test execution exposed failures now being fixed | Implemented; final suite pending |
-| Android | Earlier installable debug APK exists; latest unit/lint/APK run active | Implemented; latest verification pending |
-| Linux desktop | Compose UI fixtures and package tasks configured; actual tests/package run active | Implemented; final verification pending |
-| Worker ↔ native HTTP end-to-end | Real isolated Miniflare server starts and HTTP login/accounts/sync verified; opt-in Ktor/repository test added | Native run pending |
+| Worker routes, D1/KV/R2, mocked provider | 36 passing isolated tests; long-search, threading, resource limits and Retry-After regressions included | Implemented and verified locally and in hosted Worker CI |
+| Vue build | Release build and 6 real Chromium security tests passed again; hosted Worker/Web job also passed | Implemented and verified |
+| Shared/desktop Kotlin | 45 regular Desktop tests passed (including 7 real Compose UI fixtures); real HTTP and on-disk reopen tests passed separately, 47 unique tests executed | Implemented and verified on Linux JVM |
+| Android | 19 unit tests passed, lint 0 errors, current debug APK assembled and apksigner verified v2 signature | Build/unit/lint verified; emulator/device run not yet verified |
+| Linux desktop | Strict DEB packaging passed; extracted bundled executable launched and login screenshot inspected | Implemented, packaged and startup verified; installation/desktop vault integration remains a release check |
+| Worker ↔ native HTTP end-to-end | Actual CIO-to-Worker test passed, including offline queue, second device, internal send/attachment/reply, idempotency and logout | Implemented and verified with isolated D1/KV/R2 |
 | iOS | Framework/native tests/unsigned simulator build configured in macOS CI | Implemented; not compiled or executed here |
-| Windows/macOS desktop | Platform vault/file/package source and CI matrix configured | Implemented; not built or executed here |
-| Hosted GitHub Actions | Workflow authored | Not yet executed for this branch |
+| Windows/macOS desktop | Actual Windows and macOS hosted Desktop jobs passed, including UI/tests and native installer packaging | Build/test/package verified in CI; signed installation and OS integration manual checks remain |
+| Hosted GitHub Actions | Run 39345486581: Worker/Web, Android and all three Desktop jobs passed. iOS stopped before source compile at a missing compiler archive checksum, now reviewed and recorded for the next run | Five jobs passed; iOS and new emulator job still pending |
 
-Detailed command evidence and failure/fix history belong in [QA validation](qa-validation.md) and `build-validation.md` when the current runner finishes. Tests use synthetic mail. Provider tests intercept external calls; the HTTP fixture blocks all outbound Worker network and sends only between its synthetic local users. No live delivery claim is made.
+Detailed commands, failure/fix history and final APK/DEB hashes are in [QA validation](qa-validation.md) and [build validation](build-validation.md). Seven sanitized screenshots and actual interaction assertions are documented in [UI validation](ui-validation.md). Tests use synthetic mail. Provider tests intercept external calls; the HTTP fixture blocks all outbound Worker network and sends only between its synthetic local users. No live delivery claim is made.
 
 ## Reproduce native HTTP end-to-end verification
 
@@ -64,4 +64,4 @@ The fixture uses only in-memory D1/KV/R2 and synthetic credentials; stop/restart
 
 Run the exact committed code through all hosted platform jobs and the [release checklist](release-checklist.md), including installed-app file permissions, native vaults, notification timing, accessibility, large mailboxes and a private staging Worker with two clients. Real Resend/S3, APNs/FCM and production compatibility-date behavior have not been verified. The local workerd currently falls back to compatibility date 2025-03-10. Windows/macOS/iOS runtime behavior cannot be certified from this Linux workspace.
 
-The project must remain a draft until current failing tests are repaired and the current platform build results are recorded. This report will be updated with actual outcomes as validation completes.
+Local test failures have been repaired and revalidated. The PR remains draft while hosted platform checks and device/staging release gates are outstanding. Android emulator startup verification has been added to CI using a disposable API 35 device; defining this job is not a claim that it has run successfully.
