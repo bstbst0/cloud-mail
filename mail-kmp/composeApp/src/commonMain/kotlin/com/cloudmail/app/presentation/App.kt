@@ -120,7 +120,7 @@ internal fun MailWorkspace(state: AppState, vm: MailViewModel) {
         val navigation: @Composable () -> Unit = {
             NavigationPanel(state, showDrafts, settings, onFolder = { vm.setFolder(it); settings = false; showDrafts = false; showSearch = false; unreadOnly = false; attachmentsOnly = false; dateFilter = false; after = ""; before = ""; scope.launch { drawer.close() } }, onAccount = { vm.setAccount(it); if (showSearch) search() }, onCompose = { vm.compose(); scope.launch { drawer.close() } }, onSettings = { settings = true; showDrafts = false; scope.launch { drawer.close() } }, onDrafts = { showDrafts = true; settings = false; showSearch = false; vm.select(null); scope.launch { drawer.close() } })
         }
-        ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = !expanded, drawerContent = { ModalDrawerSheet { navigation() } }) {
+        ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = !expanded, drawerContent = { if (!expanded) ModalDrawerSheet { navigation() } }) {
             Scaffold(snackbarHost = { SnackbarHost(snackbars) }, topBar = {
                 if (!expanded) TopAppBar(
                     title = { Text(if (settings) "Settings" else if (showDrafts) "Drafts" else folderTitle(state.folder), style = MaterialTheme.typography.titleLarge) },
@@ -157,7 +157,7 @@ internal fun MailWorkspace(state: AppState, vm: MailViewModel) {
                             showDrafts -> DraftList(state, vm)
                             split -> Row(Modifier.weight(1f)) {
                                 Column(Modifier.width(if (expanded) MailSpace.list else 320.dp).fillMaxHeight()) {
-                                    ListHeader(state, vm)
+                                    ListHeader(state, vm, onSearch = if (expanded) ({ showSearch = true }) else null)
                                     MessageList(state, vm, ::confirmDelete)
                                 }
                                 VerticalDivider()
@@ -224,9 +224,10 @@ private fun DraftList(state: AppState, vm: MailViewModel) {
 internal fun folderTitle(folder: String) = when(folder) { "sent" -> "Sent"; "star" -> "Starred"; else -> "Inbox" }
 
 @Composable
-private fun ListHeader(state: AppState, vm: MailViewModel) {
+private fun ListHeader(state: AppState, vm: MailViewModel, onSearch: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(folderTitle(state.folder), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); Text(if (state.query.isBlank()) "${state.messages.size} messages" else "Results for “${state.query}”", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        onSearch?.let { IconButton(onClick = it) { Icon(Icons.Default.Search, "Search all mail") } }
         IconButton(onClick = vm::refresh, enabled = !state.loading) { Icon(Icons.Default.Refresh, "Sync now") }
     }
 }

@@ -14,4 +14,16 @@ The restricted test host required writable Skiko/cache directories and a test-on
 
 `UiSmokeTest.kt` uses a real MailViewModel, in-memory SQLDelight and Ktor MockEngine. It explicitly sizes its Compose desktop test scenes at 320 × 640, 420 × 780 and 1280 × 900, and includes login, inbox, detail, reply composition, settings, light/dark, 150% type, offline/retry and keyboard commands.
 
-Execution is still being validated. Fixture source and screenshots alone do not establish passed assertions. Final executed results will be recorded here after the test run completes.
+The first complete native UI run executed all seven fixtures: six passed and the expanded-layout assertion found two “YOUR ADDRESSES” nodes. The closed modal drawer was still composed beside the permanent expanded sidebar. The app now composes drawer content only below the expanded breakpoint, removing the duplicated navigation from that layout. A rerun is pending; the original failure is retained in this record.
+
+Actual captures inspected from that run:
+
+| Capture | Inspection |
+| --- | --- |
+| [Compact inbox](screenshots/inbox-compact-light.png) | 420 × 780; sender, subject, timestamp, star and Compose remain distinct and readable. |
+| [Message detail](screenshots/message-detail-compact.png) | Metadata and body fit, and reply actions wrap into available width. |
+| [Reply composer](screenshots/composer-compact.png) | From/To/subject/editor and pinned save/discard actions remain reachable. |
+| [Dark settings](screenshots/settings-compact-dark.png) | Separate dark surfaces, readable labels and visibly selected theme. |
+| [150% dark composer](screenshots/composer-compact-dark-large-font.png) | 320 × 640; the title wraps, Send uses its own row, body scrolls and footer actions wrap. |
+
+The large-type settings fixture also scrolled to Sign out and its assertion passed. The keyboard fixture passed Ctrl+K search, Escape dismissal and Ctrl+N composition. Offline cached mail remained visible and Retry restored the online state in the real ViewModel fixture. These tests do not validate OS screen-reader behavior, touch gestures on a device or real server delivery.

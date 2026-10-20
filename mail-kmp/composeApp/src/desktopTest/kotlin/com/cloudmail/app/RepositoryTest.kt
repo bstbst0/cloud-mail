@@ -166,6 +166,16 @@ class RepositoryTest {
         assertEquals(413, error.code)
     }
 
+    @Test fun streamedAttachmentWithoutDeclaredLengthStopsAtTheLimitWithoutRetry() = runTest {
+        var requests = 0
+        val client = HttpClient(testEngine {
+            requests++
+            respond(io.ktor.utils.io.ByteReadChannel(ByteArray(25 * 1024 * 1024 + 1)), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/octet-stream"))
+        })
+        val error = assertFailsWith<MailException> { ApiClient(client, "https://cloud.test") { "token" }.attachment(1) }
+        assertEquals(413, error.code); assertEquals(1, requests)
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun syncWaitsForRateLimitWindowAndRetryIsCancellable() = runTest {
         var requests = 0

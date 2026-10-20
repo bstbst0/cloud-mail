@@ -64,43 +64,47 @@ class ApiClient(val client: HttpClient, private val server: String, private val 
         return found.distinctBy { it.id }
     }
     suspend fun attachment(id: Long, progress: (Float?) -> Unit = {}): ByteArray {
-        try {
-            suspend fun downloadResponse(): HttpResponse {
-                var attempt = 0
-                while (true) {
-                    val received = try { client.get("$server/api/app/v1/attachments/$id") { token()?.let { header(HttpHeaders.Authorization, it) } } }
-                    catch (error: Exception) {
-                        if (error is kotlinx.coroutines.CancellationException) throw error
-                        if (attempt++ < 2) { delay(250L shl attempt); continue }
-                        throw error
+        var attempt = 0
+        while (true) {
+            var responseStarted = false
+            try {
+                // execute{} keeps the response streaming. client.get() saves the
+                // entire body before returning, which defeats the memory bound.
+                val bytes = client.prepareGet("$server/api/app/v1/attachments/$id") {
+                    token()?.let { header(HttpHeaders.Authorization, it) }
+                }.execute { response ->
+                    responseStarted = true
+                    if (response.status.value in listOf(429, 502, 503, 504) && attempt++ < 2) {
+                        response.bodyAsChannel().cancel(null)
+                        delay(retryDelay(response, attempt))
+                        return@execute null
                     }
-                    if (received.status.value in listOf(429, 502, 503, 504) && attempt++ < 2) {
-                        received.bodyAsChannel().cancel(null); delay(retryDelay(received, attempt)); continue
+                    if (!response.status.isSuccess()) throw MailException(response.status.value, "Attachment download failed.")
+                    val size = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+                    if (size != null && size > 25 * 1024 * 1024) throw MailException(413, "Attachment exceeds the 25 MB limit.")
+                    val channel = response.bodyAsChannel()
+                    val chunks = mutableListOf<ByteArray>(); val buffer = ByteArray(8192); var total = 0
+                    while (true) {
+                        val count = channel.readAvailable(buffer, 0, buffer.size)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        total += count
+                        if (total > 25 * 1024 * 1024) throw MailException(413, "Attachment exceeds the 25 MB limit.")
+                        chunks += buffer.copyOf(count)
+                        progress(size?.takeIf { it > 0 }?.let { (total.toFloat() / it).coerceAtMost(1f) })
                     }
-                    return received
+                    ByteArray(total).also { output -> var offset = 0; chunks.forEach { it.copyInto(output, offset); offset += it.size } }
                 }
+                if (bytes != null) return bytes
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException || error is MailException) throw error
+                // Never restart a partially consumed response automatically.
+                if (!responseStarted && attempt++ < 2) { delay(250L shl attempt); continue }
+                throw MailException(0, "Attachment download interrupted. Try again when connected.")
             }
-            val response = downloadResponse()
-            if (!response.status.isSuccess()) { response.bodyAsChannel().cancel(null); throw MailException(response.status.value, "Attachment download failed.") }
-            val size = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-            if (size != null && size > 25 * 1024 * 1024) { response.bodyAsChannel().cancel(null); throw MailException(413, "Attachment exceeds the 25 MB limit.") }
-            val channel = response.bodyAsChannel()
-            val chunks = mutableListOf<ByteArray>(); val buffer = ByteArray(8192); var total = 0
-            while (true) {
-                val count = channel.readAvailable(buffer, 0, buffer.size)
-                if (count < 0) break
-                if (count == 0) continue
-                total += count
-                if (total > 25 * 1024 * 1024) { channel.cancel(null); throw MailException(413, "Attachment exceeds the 25 MB limit.") }
-                chunks += buffer.copyOf(count)
-                progress(size?.takeIf { it > 0 }?.let { (total.toFloat() / it).coerceAtMost(1f) })
-            }
-            return ByteArray(total).also { output -> var offset = 0; chunks.forEach { it.copyInto(output, offset); offset += it.size } }
-        } catch (error: Exception) {
-            if (error is kotlinx.coroutines.CancellationException || error is MailException) throw error
-            throw MailException(0, "Attachment download interrupted. Try again when connected.")
         }
     }
+
 }
 
 @PublishedApi

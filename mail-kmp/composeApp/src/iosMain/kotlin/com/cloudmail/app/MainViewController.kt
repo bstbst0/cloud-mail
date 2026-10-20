@@ -23,7 +23,12 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     LaunchedEffect(pendingMessage.value, state.messages) {
         pendingMessage.value?.let { id -> state.messages.find { it.id == id }?.let { model.select(it); pendingMessage.value = null } }
     }
-    DisposableEffect(model) { onDispose { if (foregroundModel === model) foregroundModel = null } }
+    DisposableEffect(model) {
+        onDispose {
+            if (foregroundModel === model) foregroundModel = null
+            model.dispose()
+        }
+    }
     App(model)
 }
 class IosLifecycle {

@@ -7,6 +7,9 @@ Validation uses an isolated Linux x86_64 workspace, a complete JDK 21 at `/works
 From `mail-kmp`:
 
 ```sh
+PATH=/workspace/fakeroot-local/usr/bin:$PATH \
+FONTCONFIG_FILE=/workspace/cloud-mail-fonts.conf \
+JAVA_TOOL_OPTIONS="-Dskiko.data.path=/workspace/skiko-cache -Djava.io.tmpdir=/workspace/java-tmp" \
 JAVA_HOME=/workspace/full-jdk21 DISPLAY=:99 \
 GRADLE_USER_HOME=/workspace/gradle-home \
 ANDROID_HOME=/workspace/android-sdk ANDROID_USER_HOME=/workspace/android-user \
@@ -30,11 +33,11 @@ The aapt2 override selects the already installed SDK binary in this constrained 
 - Environment restart removed active processes and `/tmp` logs. Validation resumed using persistent workspace logs and a recreated dummy display.
 
 - The first actual Desktop test execution found failing URL-validation, oversized-attachment and uncertain-send regressions. A virtual-time logout race test was stuck running recurring sync jobs; its executor was terminated (exit 143), and the failures were sent to the owning engineer. This interrupted run is explicitly not counted as a passing suite.
-- Android APK assembly succeeded on current source, but Android unit-test compilation exposed an ActivityResultLauncher Kotlin property override mismatch; the platform owner is fixing it before validation is repeated.
+- Android APK assembly succeeded on current source, but Android unit-test compilation exposed an ActivityResultLauncher Kotlin property override mismatch; the fixture now correctly overrides `val contract`, and both lifecycle tests passed.
 
 ## Latest results
 
-Current-source Android Debug APK assembly and Android Lint have completed: lint reports 0 errors and 41 warnings (mostly dependency version suggestions and catalog/style notices before final catalog cleanup). The first Android unit run executed 19 tests with one URL-validation assertion failure; the common owner has repaired that validation and the final suite is rerunning.
+Current-source Android Debug APK assembly and Android Lint have completed: lint reports 0 errors and 36 warnings (mostly dependency version suggestions and catalog/style notices before final catalog cleanup). The later Android unit run passed all 19 tests after URL-validation repair. The subsequent Desktop run executed 45 tests with 2 failures: oversized attachment error mapping and duplicate expanded navigation semantics. Its real HTTP Worker integration test passed. Both remaining failures have been repaired, including replacing eager attachment loading with a bounded streaming request; the latest full suite is rerunning.
 
 Linux DEB packaging completed with strict dependency verification. An actual extracted launcher exposed missing `java.sql.DriverManager` in the minimized runtime; explicitly declaring JDBC/security runtime modules repaired startup. The corrected packaged app launched on Xorg with a visible 800×600 login window; `/workspace/cloud-mail-packaged-login.png` records the actual runtime. Fontconfig and Skiko caches were redirected to writable workspace directories because this sandbox prevents writes to the usual home caches; a TTF-only test font configuration avoids the host OpenAI WOFF2 font's Skia native crash. These are environment settings, not substituted UI or disabled tests.
 

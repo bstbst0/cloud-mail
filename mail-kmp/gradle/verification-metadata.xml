@@ -6385,5 +6385,34 @@
             <sha256 value="1239e9dbe1397cd5971342956b2511bc3ace7b641842e4372a088dcfa8b9ad55" origin="Official Maven Central artifact; SHA-1 independently checked"/>
          </artifact>
       </component>
+      <component group="com.android.tools.build" name="aapt2" version="8.11.2-12782657">
+         <artifact name="aapt2-8.11.2-12782657.pom">
+            <sha256 value="1dec987d32ec483fd7d075c75c0fb6a2bfb15f05971984886a4528633ad8b464" origin="Official repository artifact downloaded for CI verification"/>
+         </artifact>
+         <artifact name="aapt2-8.11.2-12782657-linux.jar">
+            <sha256 value="dc44dab4b02f1135c4f97aadabac8dddfa1f08ff9f030a7b1aa044b44fdd8a2d" origin="Official repository artifact downloaded for CI verification"/>
+         </artifact>
+         <artifact name="aapt2-8.11.2-12782657-windows.jar">
+            <sha256 value="f1b5eb4ab4422bc126e60c6d7472ec8fee98038d40271a72b249cb966fc1e957" origin="Official repository artifact downloaded for CI verification"/>
+         </artifact>
+         <artifact name="aapt2-8.11.2-12782657-osx.jar">
+            <sha256 value="911ccc23b918cd87c670ab7d0dc31d745f29d3f3211dfbd61c5331641535cbcb" origin="Official repository artifact downloaded for CI verification"/>
+         </artifact>
+      </component>
+      <component group="org.jetbrains.compose.desktop" name="desktop-jvm-windows-x64" version="1.9.1">
+         <artifact name="desktop-jvm-windows-x64-1.9.1.pom">
+            <sha256 value="71a7283f3f98b109ade99f0025b40cb1192fbab8e5fff82703340a2c4fee098e" origin="Official repository artifact downloaded for CI verification"/>
+         </artifact>
+      </component>
+      <component group="org.jetbrains.compose.desktop" name="desktop-jvm-macos-x64" version="1.9.1">
+         <artifact name="desktop-jvm-macos-x64-1.9.1.pom">
+            <sha256 value="c81985d504e639a69e89a7af74cd1f1c93220909fc9056814c23f4ff9e79130b" origin="Official repository artifact downloaded for CI verification"/>
+         </artifact>
+      </component>
+      <component group="org.jetbrains.compose.desktop" name="desktop-jvm-macos-arm64" version="1.9.1">
+         <artifact name="desktop-jvm-macos-arm64-1.9.1.pom">
+            <sha256 value="e56402a0dc3ca6b2fcb54ab0152d90cd4f5a78cde6182f8fb0cc5a8c5bec917c" origin="Official repository artifact downloaded for CI verification"/>
+         </artifact>
+      </component>
    </components>
 </verification-metadata>
