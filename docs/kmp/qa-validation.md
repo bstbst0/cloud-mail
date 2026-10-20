@@ -137,3 +137,20 @@ Practical capability boundaries: Desktop uses a safe text fallback for HTML and 
 - Run platform file picker, download, open/share, safe HTML and image-consent checks on Android, iOS, Windows, macOS and Linux.
 - Enable and verify platform background scheduling/notification permissions using synthetic received mail; no duplicate notifications after resync.
 - Sign release binaries with operator-provided secrets outside the repository. FCM/APNs credentials are optional and must not block core mail usage.
+
+## Optional formal scan capability
+
+The `codex-security:security-diff-scan` skill was consulted for a final immutable-range review (`cc6c46e..ff8f498`). Its [SKILL.md](skill://Plugin_1e648473be9c8191a91ac3947151af55/security-diff-scan/SKILL.md) requires: “Run the `security_diff_scan` preflight … before reviewing files or creating a goal.” The referenced preflight resources could not be read through the skill provider, and no scan-start/preflight tools or local plugin launcher were available. Consequently no formal Codex Security scan, scan ID, SARIF or certification is claimed. Existing scoped manual reviews and executed authorization, renderer, session, crypto, resource-limit and race regressions remain the security evidence; production gates are unchanged.
+
+## Current runtime commit `ff8f498`
+
+Hosted run [39454388269](https://github.com/bstbst0/cloud-mail/actions/runs/39454388269) has passed Worker/Web, Android, Linux Desktop, Windows Desktop and Android emulator startup. Linux validation artifact `12279414565` was downloaded and its JUnit XML parsed: **50 tests, 0 failures, 0 errors, 0 skips** (Repository 18, ViewModel 9, Contract 5, UI 7, DesktopSecurity 3, RichText 6, Worker HTTP 1, disk persistence 1). Windows packaging artifact `12280111523` and current APK artifact `12280680650` were produced. Apple jobs were still queued when this checkpoint was written; their successful execution is not inferred from the other platforms.
+
+The six compiler diagnostics from the preceding actual iOS attempt are addressed in the source: isolated about:blank navigation no longer references the unavailable enum member; secure random uses a typed pinned pointer directly; mutable notification content uses explicit Objective-C setters. The new hosted step builds to a deterministic DerivedData path, installs the resulting app on an available iPhone simulator, launches it, checks process liveness and captures a screenshot. This step remains unverified until an actual Apple runner completes it.
+
+
+### Apple native execution on `ff8f498`
+
+Actual job `118737272647` completed Kotlin/Native compilation and linked `CloudMail.framework`, then linked and executed the native test binary. All 11 shared contract/rich-text cases passed. Three unchanged security cases failed with `errSecNotAvailable (-25291)` because the default standalone simulator process had no usable Keychain service. This is recorded as a failed native test run, not a pass. Artifact `12280887959` was downloaded and its failure XML inspected.
+
+The harness now boots a real iPhone simulator, selects its UUID explicitly and configures the verified Kotlin 2.2.20 `KotlinNativeSimulatorTest.standalone=false` API. Crypto/Keychain assertions are retained unchanged, with no ignore, skip or insecure storage fallback. CI independently attempts framework, Xcode/app startup and native tests, so a failure in one does not conceal the other available checks. macOS Desktop completed successfully in this same run.

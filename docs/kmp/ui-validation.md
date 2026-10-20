@@ -28,3 +28,12 @@ Actual captures inspected from that run:
 | [150% dark composer](screenshots/composer-compact-dark-large-font.png) | 320 × 640; the title wraps, Send uses its own row, body scrolls and footer actions wrap. |
 
 The large-type settings fixture also scrolled to Sign out and its assertion passed. The keyboard fixture passed Ctrl+K search, Escape dismissal and Ctrl+N composition. Offline cached mail remained visible and Retry restored the online state in the real ViewModel fixture. These tests do not validate OS screen-reader behavior, touch gestures on a device or real server delivery.
+
+
+## Android API 35 startup
+
+The actual hosted emulator install/startup check passed in run `39346174056` (source `0dee16d`). UIAutomator confirmed the native sign-in fields and button; AndroidRuntime error output was empty. The downloaded screenshot was inspected: system bars, edge-to-edge layout, fields, footer and disabled empty-form action are readable and reachable without overflow. This is an actual Android APK, not the Desktop fixture.
+
+![Actual Android API 35 startup](screenshots/android-api35-startup.png)
+
+Device login/send, file-picker permissions, notification dialogs/background timing and rotation with unsaved input still require dedicated platform QA.

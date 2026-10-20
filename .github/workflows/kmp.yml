@@ -190,16 +190,31 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: true
-      - name: Build shared iOS simulator framework and execute native tests
+      - name: Boot simulator security services for native integration tests
         working-directory: mail-kmp
-        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64 :composeApp:iosSimulatorArm64Test
+        run: |
+          source scripts/ios-simulator.sh
+          boot_cloud_mail_simulator
+          echo "CLOUD_MAIL_IOS_SIMULATOR=$CLOUD_MAIL_IOS_SIMULATOR" >> "$GITHUB_ENV"
+      - name: Build shared iOS simulator framework
+        id: ios_framework
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64
       - name: Build unsigned simulator app
         working-directory: mail-kmp
         run: xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO build
       - name: Install and launch actual iOS simulator app
         working-directory: mail-kmp
         run: bash scripts/ios-startup-smoke.sh 'build/ios-simulator/Build/Products/Debug-iphonesimulator/Cloud Mail.app'
+      - name: Native crypto, Keychain and shared tests on booted simulator
+        if: always() && steps.ios_framework.outcome == 'success'
+        working-directory: mail-kmp
+        run: |
+          source scripts/ios-simulator.sh
+          boot_cloud_mail_simulator
+          ./gradlew --no-daemon --dependency-verification=strict :composeApp:iosSimulatorArm64Test
       - uses: actions/upload-artifact@v4
+        if: always() && steps.ios_framework.outcome == 'success'
         with:
           name: cloud-mail-ios-framework
           path: mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**

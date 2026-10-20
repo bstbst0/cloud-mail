@@ -53,7 +53,22 @@ compose.desktop {
     application {
         mainClass = "com.cloudmail.app.MainKt"
         jvmArgs += "-Dcloudmail.defaultServerUrl=${configuredServerUrl.get()}"
-        nativeDistributions { modules("java.sql", "java.naming", "jdk.unsupported", "jdk.crypto.ec"); targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb); packageName = "Cloud Mail"; packageVersion = "1.0.0" }
+        nativeDistributions {
+            modules("java.sql", "java.naming", "jdk.unsupported", "jdk.crypto.ec")
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "Cloud Mail"
+            packageVersion = "1.0.0"
+            linux { iconFile.set(project.file("src/desktopMain/resources/cloud-mail.png")) }
+            macOS { iconFile.set(project.file("../branding/cloud-mail.icns")) }
+            windows {
+                iconFile.set(project.file("../branding/cloud-mail.ico"))
+                menu = true
+                shortcut = true
+                menuGroup = "Cloud Mail"
+                perUserInstall = true
+                upgradeUuid = "7f2ca8b2-f986-4962-a9ca-dd3ca51b7580"
+            }
+        }
     }
 }
 
@@ -62,4 +77,11 @@ tasks.withType<JavaExec>().configureEach {
     if (name == "run" && allowLocalHttp.get()) {
         jvmArgs("-Dcloudmail.development=true", "-Dcloudmail.allowLocalHttp=true")
     }
+}
+
+// Keychain integration needs the booted simulator's security service. The
+// Kotlin/Native standalone process mode has no usable Keychain bootstrap.
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+    standalone.set(false)
+    providers.environmentVariable("CLOUD_MAIL_IOS_SIMULATOR").orNull?.let { device.set(it) }
 }
