@@ -91,7 +91,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimu
     doFirst {
         val testExecutable = executable
         providers.exec {
-            commandLine("codesign", "--force", "--sign", "-", "--entitlements",
+            commandLine("python3", rootProject.file("scripts/run-with-timeout.py").absolutePath,
+                "60", "codesign", "--force", "--sign", "-", "--entitlements",
                 testEntitlements.asFile.absolutePath, testExecutable.absolutePath)
         }.result.get().assertNormalExitValue()
     }

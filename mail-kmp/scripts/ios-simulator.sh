@@ -25,6 +25,9 @@ PY
 )
   fi
   export CLOUD_MAIL_IOS_SIMULATOR
-  xcrun simctl boot "$CLOUD_MAIL_IOS_SIMULATOR" || true
-  xcrun simctl bootstatus "$CLOUD_MAIL_IOS_SIMULATOR" -b
+  local timeout_script
+  timeout_script="$(dirname "${BASH_SOURCE[0]}")/run-with-timeout.py"
+  printf 'Boot simulator and wait for security services\n'
+  python3 "$timeout_script" 30 xcrun simctl boot "$CLOUD_MAIL_IOS_SIMULATOR" || true
+  python3 "$timeout_script" 180 xcrun simctl bootstatus "$CLOUD_MAIL_IOS_SIMULATOR" -b
 }

@@ -180,8 +180,8 @@ jobs:
           if [[ -n "${CLOUD_MAIL_FIXTURE_PID:-}" ]]; then kill "$CLOUD_MAIL_FIXTURE_PID" || true; fi
 
   ios:
-    # The ARM64 hosted pool failed to acquire runners. Keep ARM64 compilation,
-    # and run actual Simulator/Keychain checks on the independent Intel pool.
+    timeout-minutes: 60
+    # Use independent Intel capacity; ARM64 compilation runs in parallel below.
     runs-on: macos-15-intel
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
@@ -195,16 +195,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: true
+      - name: Build Intel iOS simulator framework
+        id: ios_framework
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosX64
       - name: Boot simulator security services for native integration tests
         working-directory: mail-kmp
         run: |
           source scripts/ios-simulator.sh
           boot_cloud_mail_simulator
           echo "CLOUD_MAIL_IOS_SIMULATOR=$CLOUD_MAIL_IOS_SIMULATOR" >> "$GITHUB_ENV"
-      - name: Build ARM64 and Intel iOS simulator frameworks
-        id: ios_framework
-        working-directory: mail-kmp
-        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64 :composeApp:linkDebugFrameworkIosX64
       - name: Build unsigned simulator app
         working-directory: mail-kmp
         run: >-
@@ -215,9 +215,11 @@ jobs:
           'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosX64/debugFramework'
           build
       - name: Install and launch actual iOS simulator app
+        timeout-minutes: 10
         working-directory: mail-kmp
         run: bash scripts/ios-startup-smoke.sh 'build/ios-simulator/Build/Products/Debug-iphonesimulator/Cloud Mail.app'
       - name: Native crypto, Keychain and shared tests on booted simulator
+        timeout-minutes: 15
         if: always() && steps.ios_framework.outcome == 'success'
         working-directory: mail-kmp
         run: |
@@ -229,7 +231,6 @@ jobs:
         with:
           name: cloud-mail-ios-framework
           path: |
-            mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**
             mail-kmp/composeApp/build/bin/iosX64/debugFramework/**
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -241,3 +242,40 @@ jobs:
             mail-kmp/composeApp/build/test-results/**
             mail-kmp/build/reports/dependency-verification/**
             mail-kmp/composeApp/build/ios-smoke/**
+
+      - name: Shut down disposable simulator
+        if: always()
+        timeout-minutes: 2
+        working-directory: mail-kmp
+        run: |
+          if [[ -n "${CLOUD_MAIL_IOS_SIMULATOR:-}" ]]; then
+            python3 scripts/run-with-timeout.py 30 xcrun simctl shutdown "$CLOUD_MAIL_IOS_SIMULATOR" || true
+          fi
+
+  ios-arm64:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Compile ARM64 iOS simulator framework
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-ios-arm64-framework
+          path: mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ios-arm64-validation
+          path: mail-kmp/build/reports/dependency-verification/**

@@ -37,3 +37,8 @@ The actual hosted emulator install/startup check passed in run `39346174056` (so
 ![Actual Android API 35 startup](screenshots/android-api35-startup.png)
 
 Device login/send, file-picker permissions, notification dialogs/background timing and rotation with unsaved input still require dedicated platform QA.
+
+
+## macOS Intel evidence
+
+Run 39467778176 at `b8f4e14` passed actual Desktop tests and DMG packaging on `macos-15-intel`. Downloaded artifact 12285054939 contains 50 discovered cases: 49 passed and the Linux-only actual Worker HTTP fixture case was explicitly skipped. Its expanded inbox and compact 150%-type dark composer screenshots were visually inspected and preserved as [inbox](screenshots/macos-intel-inbox.png) and [composer](screenshots/macos-intel-composer-large-dark.png). They use synthetic fixtures, not private mail. The composer screenshot intentionally reflects the scroll position reached during the interaction test. This does not certify signed installation or native Keychain permission prompts.
