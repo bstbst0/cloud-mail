@@ -194,3 +194,13 @@ Run 39476429175 (`f6dc9a0`) passed seven jobs: Worker/Web, Android, Android star
 - Startup evidence will upload before native tests, so subsequent diagnosis does not have to wait for the entire native test job. No test was removed or changed to expect a Keychain failure.
 
 - Run 39522267773: seven jobs passed, including both framework architectures and all non-iOS regression jobs; the Swift host built and simulator booted. App startup failed again. Native integration was still running when the follow-up correction was prepared; no passing case count is inferred. The subsequent push supersedes that known-incorrect signing configuration.
+
+- At 45527db, the linked Intel test executable passed XML/DER simulator identity extraction and group checks. Xcode ad-hoc simulator app build, boot, signature verification, embedded app identity check, installation and live-process startup all passed. Downloaded startup artifact 12314666038 and visually inspected the actual Compose login screenshot. Native test step remained running at this checkpoint; no passing Keychain case count is inferred yet.
+
+## 45527db native test timeout and deterministic cache correction
+
+- Actual hosted log pinpoints the timeout before test execution. At 01:44:13 UTC, `linkDebugTestIosX64` reran because input `konanCacheKind$kotlin_gradle_plugin_common` changed; the native step timed out at 02:11:13 while linking. No native test case execution/result is reported. The earlier embedded-identity verification and real App startup remain passing evidence.
+- Both Intel CI Gradle invocations now explicitly use `-Pkotlin.native.cacheKind.iosX64=none`, supported by the installed Kotlin 2.2.20 `NativePropertiesLoader.nativeCacheKindForTarget` (property suffix is the target preset name). This pins compiler cache selection across the cold-compiler and subsequent invocation instead of changing the link fingerprint after simulator boot. No compile or test task is excluded. Diagnostic `--info` was also removed to keep invocation modes consistent; the log identifies cache kind, not log verbosity, as the actual changed input.
+- Prepared an independent physical-device ARM64 framework and unsigned `iphoneos` host build job. No team/profile or distribution entitlement is fabricated, and no installation is claimed from an unsigned device build. Native test cancellation now respects `!cancelled()` while still running after startup failure when the framework exists.
+
+- Follow-up local validation: strict offline Gradle dry-run with pinned Intel cache selection and both Intel test/device ARM64 framework tasks passed in 11s; workflow YAML, explicit matching cache flags, shell syntax and whitespace checks passed. Apple runtime and device build results require the next hosted run.

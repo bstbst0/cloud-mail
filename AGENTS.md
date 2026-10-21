@@ -28,7 +28,7 @@
 - `docs/kmp/api-contract.md`: 原生 `/api/app/v1` 契約；原有 Web API 格式與原始 JWT Authorization header 必須保持相容。
 - `mail-worker/migrations/0001_app_v1.sql`: 加法式 D1 migration；trigger 在原有收信、Web 修改交易內記錄 sequence event。勿在 HTTP request 自動套用 migration。
 - 共用與桌面測試：`cd mail-kmp && ./gradlew :composeApp:desktopTest`（Linux 需圖形顯示，例如 `xvfb-run -a`）。Android：`:composeApp:testDebugUnitTest :composeApp:lintDebug :composeApp:assembleDebug`。完整 JDK 21、Android SDK 35；Gradle Wrapper 與 Version Catalog 固定版本。
-- macOS 驗證 iOS：`:composeApp:iosSimulatorArm64Test :composeApp:linkDebugFrameworkIosSimulatorArm64`，再使用 Xcode shared `CloudMail` scheme 建置。沒有 Xcode 時不得宣稱 iOS 已編譯或通過測試。
+- macOS 驗證 iOS：先在 `mail-kmp` source `scripts/ios-simulator.sh` 並呼叫 `boot_cloud_mail_simulator`；Apple Silicon 執行 `:composeApp:iosSimulatorArm64Test :composeApp:linkDebugFrameworkIosSimulatorArm64`，Intel 改用 `iosX64`。測試專用 Keychain identity 必須透過 Mach-O XML/DER simulator section 嵌入，不可將 iOS entitlement 加到 macOS host 簽章。Xcode simulator build 使用 ad-hoc signing；`CODE_SIGNING_ALLOWED=NO` 只用於不能安裝的 device 編譯檢查。Device framework 使用 `:composeApp:linkDebugFrameworkIosArm64`。沒有實際 Xcode 結果不得宣稱 iOS 已通過。
 - Worker：`npm test`；Web：`npm test && npm run build`。Browser tests 使用 Chromium，可用 `CHROMIUM_PATH` 設定路徑。
 - 不提交 build、APK、安裝包、`local.properties`、私密設定。依賴 checksum 變更需審查來源，不能以關閉 strict verification 解決 CI 失敗。
 - 附件改由授權 `/api/oss/*` 或 `/api/app/v1/attachments/:id` 存取；Web 使用 authenticated Blob，不可將 Token 放入 URL 或送往信件提供的網域。公開 R2/S3 domain 需由操作者另行關閉附件公開存取。

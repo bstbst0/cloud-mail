@@ -208,7 +208,7 @@ jobs:
       - name: Build iOS framework and native test executable
         id: ios_framework
         working-directory: mail-kmp
-        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosX64 :composeApp:linkDebugTestIosX64
+        run: ./gradlew --no-daemon --dependency-verification=strict -Pkotlin.native.cacheKind.iosX64=none :composeApp:linkDebugFrameworkIosX64 :composeApp:linkDebugTestIosX64
       - name: Verify embedded native test identity
         working-directory: mail-kmp
         run: |
@@ -253,12 +253,12 @@ jobs:
           path: mail-kmp/composeApp/build/ios-smoke
       - name: Native crypto, Keychain and shared tests on booted simulator
         timeout-minutes: 30
-        if: always() && steps.ios_framework.outcome == 'success'
+        if: ${{ !cancelled() && steps.ios_framework.outcome == 'success' }}
         working-directory: mail-kmp
         run: |
           source scripts/ios-simulator.sh
           boot_cloud_mail_simulator
-          ./gradlew --no-daemon --dependency-verification=strict --info :composeApp:iosX64Test
+          ./gradlew --no-daemon --dependency-verification=strict -Pkotlin.native.cacheKind.iosX64=none :composeApp:iosX64Test
       - uses: actions/upload-artifact@v4
         if: always() && steps.ios_framework.outcome == 'success'
         with:
@@ -311,4 +311,43 @@ jobs:
         if: always()
         with:
           name: cloud-mail-ios-arm64-validation
+          path: mail-kmp/build/reports/dependency-verification/**
+
+  ios-device:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Compile physical-device ARM64 framework
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosArm64
+      - name: Build unsigned physical-device app
+        working-directory: mail-kmp
+        run: >-
+          xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail
+          -sdk iphoneos -configuration Debug -destination 'generic/platform=iOS'
+          -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO ARCHS=arm64
+          SKIP_KOTLIN_GRADLE_BUILD=YES
+          'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosArm64/debugFramework'
+          build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-ios-device-build
+          path: |
+            mail-kmp/composeApp/build/bin/iosArm64/debugFramework/**
+            mail-kmp/build/ios-device/Build/Products/Debug-iphoneos/Cloud Mail.app/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ios-device-validation
           path: mail-kmp/build/reports/dependency-verification/**
