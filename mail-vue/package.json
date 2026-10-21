@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "node --test test/*.test.mjs",
     "dev": "vite --mode dev",
     "remote": "vite --mode remote",
     "build": "vite build --mode release",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
     "less": "^4.2.2",
+    "playwright-core": "1.56.1",
     "sass": "^1.82.0",
     "terser": "^5.39.0",
     "unplugin-auto-import": "^19.3.0",

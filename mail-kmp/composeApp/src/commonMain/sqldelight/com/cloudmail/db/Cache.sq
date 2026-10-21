@@ -1,0 +1,21 @@
+CREATE TABLE encrypted_entry (
+  owner TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  id TEXT NOT NULL,
+  payload BLOB NOT NULL,
+  PRIMARY KEY(owner, kind, id)
+);
+entries:
+SELECT id, payload FROM encrypted_entry WHERE owner = ? AND kind = ?;
+entry:
+SELECT payload FROM encrypted_entry WHERE owner = ? AND kind = ? AND id = ?;
+entryIds:
+SELECT id FROM encrypted_entry WHERE owner = ? AND kind = ?;
+upsert:
+INSERT OR REPLACE INTO encrypted_entry(owner, kind, id, payload) VALUES (?, ?, ?, ?);
+remove:
+DELETE FROM encrypted_entry WHERE owner = ? AND kind = ? AND id = ?;
+clearKind:
+DELETE FROM encrypted_entry WHERE owner = ? AND kind = ?;
+clearOwner:
+DELETE FROM encrypted_entry WHERE owner = ?;

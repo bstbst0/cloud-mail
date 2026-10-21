@@ -48,7 +48,12 @@ const jwtUtils = {
 
 	async verifyToken(c, token) {
 		try {
-			const [headerB64, payloadB64, signatureB64] = token.split('.');
+			if (typeof token !== 'string' || token.length > 4096) return null;
+            const parts=token.split('.');
+            if(parts.length!==3) return null;
+            const [headerB64, payloadB64, signatureB64] = parts;
+            const header=JSON.parse(decoder.decode(base64urlDecode(headerB64)));
+            if(header.alg!=='HS256'||header.typ!=='JWT') return null;
 
 			if (!headerB64 || !payloadB64 || !signatureB64) return null;
 
@@ -74,12 +79,12 @@ const jwtUtils = {
 			const payload = JSON.parse(payloadJson);
 
 			const now = Math.floor(Date.now() / 1000);
-			if (payload.exp && payload.exp < now) return null;
+			if (payload.exp !== undefined && (!Number.isFinite(payload.exp)||payload.exp <= now)) return null;
 
 			return payload;
 
 		} catch (err) {
-			console.log(err)
+
 			return null;
 		}
 	}

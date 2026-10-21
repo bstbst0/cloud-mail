@@ -1,4 +1,7 @@
 const en = {
+    loadRemoteImages: 'Load remote images (may allow tracking)',
+    download: 'Download',
+
     inbox: 'Inbox',
     drafts: 'Drafts',
     sent: 'Sent',

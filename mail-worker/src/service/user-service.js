@@ -54,7 +54,7 @@ const userService = {
 
 		const { password } = params;
 
-		if (password < 6) {
+		if (typeof password !== 'string' || password.length < 6 || password.length > 256) {
 			throw new BizError(t('pwdMinLengthLimit'));
 		}
 		const { salt, hash } = await cryptoUtils.hashPassword(password);

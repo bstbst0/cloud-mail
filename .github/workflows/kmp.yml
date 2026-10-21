@@ -1,0 +1,353 @@
+name: Cloud Mail native and compatibility checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: |
+            mail-worker/pnpm-lock.yaml
+            mail-vue/pnpm-lock.yaml
+      - name: Install locked dependencies
+        run: |
+          pnpm --dir mail-vue install --frozen-lockfile
+          pnpm --dir mail-worker install --frozen-lockfile
+      - name: Web regression release build
+        run: npm --prefix mail-vue run build
+      - name: Install isolated browser test runtime
+        run: pnpm --dir mail-vue exec playwright-core install --with-deps chromium
+      - name: Select downloaded Chromium
+        working-directory: mail-vue
+        run: node --input-type=module -e "import {chromium} from 'playwright-core'; import {appendFileSync} from 'node:fs'; appendFileSync(process.env.GITHUB_ENV, 'CHROMIUM_PATH=' + chromium.executablePath() + '\n');"
+      - name: Email HTML and private attachment browser regression
+        run: npm --prefix mail-vue test
+      - name: Worker isolated D1, KV, R2 and mocked provider tests
+        run: npm --prefix mail-worker test
+      - name: Whitespace and conflict marker checks
+        run: |
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======\s*$|>>>>>>> )' -- ':!mail-vue/public/tinymce/**'; then exit 1; fi
+      - name: Worker JavaScript syntax checks
+        run: node -e "const {execFileSync}=require('node:child_process'); const paths=execFileSync('git',['ls-files','-z','--','mail-worker/src'],{encoding:'utf8'}).split('\0').filter(p=>p.endsWith('.js')); for(const file of paths) execFileSync(process.execPath,['--check',file],{stdio:'inherit'});"
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-35 build-tools;35.0.0
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Tests and installable APK
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:testDebugUnitTest :composeApp:lintDebug :composeApp:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-debug-apk
+          path: mail-kmp/composeApp/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-android-validation
+          path: |
+            mail-kmp/composeApp/build/reports/**
+            mail-kmp/composeApp/build/test-results/**
+            mail-kmp/build/reports/dependency-verification/**
+
+  android-smoke:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloud-mail-debug-apk
+          path: android-artifact
+      - name: Enable emulator hardware acceleration
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: bash mail-kmp/scripts/android-startup-smoke.sh android-artifact/composeApp-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-android-emulator-evidence
+          path: mail-kmp/composeApp/build/android-smoke/**
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - uses: pnpm/action-setup@v4
+        if: runner.os == 'Linux'
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: '22'
+      - name: Install isolated Worker integration runtime
+        if: runner.os == 'Linux'
+        run: pnpm --dir mail-worker install --frozen-lockfile
+      - name: Start isolated Worker for native HTTP integration
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          node mail-worker/test/http-fixture.mjs > "$RUNNER_TEMP/cloud-mail-worker-fixture.log" 2>&1 &
+          echo "CLOUD_MAIL_FIXTURE_PID=$!" >> "$GITHUB_ENV"
+          for attempt in {1..30}; do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8789/api/app/v1/accounts || true)
+            if [[ "$status" == "401" ]]; then
+              echo "CLOUD_MAIL_E2E_URL=http://127.0.0.1:8789" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/cloud-mail-worker-fixture.log"
+          exit 1
+      - name: Test and package platform app
+        working-directory: mail-kmp
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a ./gradlew --no-daemon --dependency-verification=strict :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
+          else
+            ./gradlew --no-daemon --dependency-verification=strict :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-desktop-${{ matrix.os }}
+          path: mail-kmp/composeApp/build/compose/binaries/main/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ui-evidence-${{ matrix.os }}
+          path: |
+            mail-kmp/composeApp/build/ui-screenshots/**
+            mail-kmp/composeApp/build/reports/tests/**
+            mail-kmp/composeApp/build/test-results/**
+            mail-kmp/build/reports/dependency-verification/**
+      - name: Stop isolated Worker fixture
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [[ -n "${CLOUD_MAIL_FIXTURE_PID:-}" ]]; then kill "$CLOUD_MAIL_FIXTURE_PID" || true; fi
+
+  ios:
+    timeout-minutes: 90
+    # Use independent Intel capacity; ARM64 compilation runs in parallel below.
+    runs-on: macos-15-intel
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      CLOUD_MAIL_IOS_RUNTIME_PREFIX: com.apple.CoreSimulator.SimRuntime.iOS-18-
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate required Compose iOS host metadata
+        working-directory: mail-kmp
+        run: |
+          python3 - <<'PYPLIST'
+          import plistlib
+          with open('iosApp/CloudMail/Info.plist', 'rb') as source:
+              info = plistlib.load(source)
+          if info.get('CADisableMinimumFrameDurationOnPhone') is not True:
+              raise SystemExit('Compose iOS requires CADisableMinimumFrameDurationOnPhone=true')
+          PYPLIST
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Build iOS framework and native test executable
+        id: ios_framework
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict -Pkotlin.native.cacheKind.iosX64=none :composeApp:linkDebugFrameworkIosX64 :composeApp:linkDebugTestIosX64
+      - name: Verify embedded native test identity
+        working-directory: mail-kmp
+        run: |
+          mkdir -p composeApp/build/ios-smoke
+          python3 scripts/run-with-timeout.py 30 xcrun segedit composeApp/build/bin/iosX64/debugTest/test.kexe -extract __TEXT __entitlements composeApp/build/ios-smoke/test-simulated.entitlements -extract __TEXT __ents_der composeApp/build/ios-smoke/test-simulated.der
+          python3 - <<'PYIDENTITY'
+          import plistlib
+          from pathlib import Path
+          root = Path('composeApp/build/ios-smoke')
+          with (root / 'test-simulated.entitlements').open('rb') as source:
+              identity = plistlib.load(source)
+          if identity.get('application-identifier') != 'com.cloudmail.app.tests' or identity.get('keychain-access-groups') != ['com.cloudmail.app.tests']:
+              raise SystemExit('Native test executable has an unexpected simulator identity')
+          if not (root / 'test-simulated.der').stat().st_size:
+              raise SystemExit('Native test executable is missing DER simulator entitlements')
+          PYIDENTITY
+      - name: Build ad-hoc signed simulator app
+        working-directory: mail-kmp
+        run: >-
+          xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail
+          -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- ARCHS=x86_64
+          SKIP_KOTLIN_GRADLE_BUILD=YES
+          'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosX64/debugFramework'
+          build
+      - name: Boot simulator security services for native integration tests
+        timeout-minutes: 12
+        working-directory: mail-kmp
+        run: |
+          source scripts/ios-simulator.sh
+          boot_cloud_mail_simulator
+          echo "CLOUD_MAIL_IOS_SIMULATOR=$CLOUD_MAIL_IOS_SIMULATOR" >> "$GITHUB_ENV"
+      - name: Install and launch actual iOS simulator app
+        timeout-minutes: 10
+        working-directory: mail-kmp
+        run: bash scripts/ios-startup-smoke.sh 'build/ios-simulator/Build/Products/Debug-iphonesimulator/Cloud Mail.app'
+      - name: Preserve startup evidence before native integration tests
+        uses: actions/upload-artifact@v4
+        if: always() && steps.ios_framework.outcome == 'success'
+        with:
+          name: cloud-mail-ios-startup-evidence
+          path: mail-kmp/composeApp/build/ios-smoke
+      - name: Native crypto, Keychain and shared tests on booted simulator
+        timeout-minutes: 30
+        if: ${{ !cancelled() && steps.ios_framework.outcome == 'success' }}
+        working-directory: mail-kmp
+        run: |
+          source scripts/ios-simulator.sh
+          boot_cloud_mail_simulator
+          ./gradlew --no-daemon --dependency-verification=strict -Pkotlin.native.cacheKind.iosX64=none :composeApp:iosX64Test
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.ios_framework.outcome == 'success'
+        with:
+          name: cloud-mail-ios-framework
+          path: |
+            mail-kmp/composeApp/build/bin/iosX64/debugFramework/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ios-validation
+          path: |
+            mail-kmp/composeApp/build/reports/**
+            mail-kmp/composeApp/build/test-results/**
+            mail-kmp/build/reports/dependency-verification/**
+            mail-kmp/composeApp/build/ios-smoke/**
+
+      - name: Shut down disposable simulator
+        if: always()
+        timeout-minutes: 2
+        working-directory: mail-kmp
+        run: |
+          if [[ -n "${CLOUD_MAIL_IOS_SIMULATOR:-}" ]]; then
+            python3 scripts/run-with-timeout.py 30 xcrun simctl shutdown "$CLOUD_MAIL_IOS_SIMULATOR" || true
+          fi
+
+  ios-arm64:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Compile ARM64 iOS simulator framework
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosSimulatorArm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-ios-arm64-framework
+          path: mail-kmp/composeApp/build/bin/iosSimulatorArm64/debugFramework/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ios-arm64-validation
+          path: mail-kmp/build/reports/dependency-verification/**
+
+  ios-device:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - name: Compile physical-device ARM64 framework
+        working-directory: mail-kmp
+        run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosArm64
+      - name: Build unsigned physical-device app
+        working-directory: mail-kmp
+        run: >-
+          xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail
+          -sdk iphoneos -configuration Debug -destination 'generic/platform=iOS'
+          -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO ARCHS=arm64
+          SKIP_KOTLIN_GRADLE_BUILD=YES
+          'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosArm64/debugFramework'
+          build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-mail-ios-device-build
+          path: |
+            mail-kmp/composeApp/build/bin/iosArm64/debugFramework/**
+            mail-kmp/build/ios-device/Build/Products/Debug-iphoneos/Cloud Mail.app/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-mail-ios-device-validation
+          path: mail-kmp/build/reports/dependency-verification/**

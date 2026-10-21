@@ -16,7 +16,12 @@ export default {
 			return app.fetch(req, env, ctx);
 		}
 
-		 if (['/static/','/attachments/'].some(p => url.pathname.startsWith(p))) {
+		 if (url.pathname.startsWith('/attachments/')) {
+             url.pathname = '/oss/' + url.pathname.substring(1);
+             return app.fetch(new Request(url.toString(),req),env,ctx);
+         }
+
+		 if (url.pathname.startsWith('/static/')) {
 			 return await kvObjService.toObjResp( { env }, url.pathname.substring(1));
 		 }
 

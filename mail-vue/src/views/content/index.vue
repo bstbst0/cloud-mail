@@ -39,7 +39,9 @@
             <el-alert v-if="email.status === 5" :closable="false" :title="$t('delayed')" class="email-msg" type="warning" show-icon />
           </div>
           <el-scrollbar class="htm-scrollbar" :class="email.attList.length === 0 ? 'bottom-distance' : ''">
-            <ShadowHtml class="shadow-html" :html="formatImage(email.content)" v-if="email.content" />
+            <el-button v-if="email.content && !remoteImages" size="small" @click="remoteImages = true">{{ $t('loadRemoteImages') }}</el-button>
+            <el-alert v-if="attachmentError" :title="attachmentError" type="error" :closable="false" />
+            <ShadowHtml class="shadow-html" :html="renderedHtml" :remote-images="remoteImages" v-if="email.content" />
             <pre v-else class="email-text" >{{email.text}}</pre>
           </el-scrollbar>
           <div class="att" v-if="email.attList.length > 0">
@@ -50,18 +52,18 @@
             <div class="att-box">
 
               <div class="att-item" v-for="att in email.attList" :key="att.attId">
-                <div class="att-icon" @click="showImage(att.key)">
+                <div class="att-icon" @click="showImage(att)">
                   <Icon v-bind="getIconByName(att.filename)" />
                 </div>
-                <div class="att-name" @click="showImage(att.key)">
+                <div class="att-name" @click="showImage(att)">
                   {{ att.filename }}
                 </div>
                 <div class="att-size">{{ formatBytes(att.size) }}</div>
                 <div class="opt-icon att-icon">
-                  <Icon v-if="isImage(att.filename)" icon="hugeicons:view" width="22" height="22" @click="showImage(att.key)"/>
-                  <a :href="cvtR2Url(att.key)" download>
+                  <Icon v-if="isImage(att.filename)" icon="hugeicons:view" width="22" height="22" @click="showImage(att)"/>
+                  <button class="attachment-download" type="button" :aria-label="$t('download') + ': ' + att.filename" :disabled="attachmentBusy === att.key" @click="downloadAttachment(att)">
                     <Icon icon="system-uicons:push-down" width="22" height="22"/>
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>
@@ -99,7 +101,7 @@ import {useAccountStore} from "@/store/account.js";
 import {formatDetailDate} from "@/utils/day.js";
 import {starAdd, starCancel} from "@/request/star.js";
 import {getExtName, formatBytes} from "@/utils/file-utils.js";
-import {cvtR2Url,toOssDomain} from "@/utils/convert.js";
+import {privateAttachmentBlob, safeFilename} from "@/utils/private-attachments.js";
 import {getIconByName} from "@/utils/icon-utils.js";
 import {useSettingStore} from "@/store/setting.js";
 import {allEmailDelete} from "@/request/all-email.js";
@@ -115,6 +117,13 @@ const router = useRouter()
 const email = emailStore.contentData.email
 const showPreview = ref(false)
 const srcList = reactive([])
+const renderedHtml = ref('')
+const remoteImages = ref(false)
+const attachmentError = ref('')
+const attachmentBusy = ref('')
+const attachmentUrls = new Map()
+const downloads = new AbortController()
+let unmounted = false
 
 const { t } = useI18n()
 watch(() => accountStore.currentAccountId, () => {
@@ -122,6 +131,7 @@ watch(() => accountStore.currentAccountId, () => {
 })
 
 onMounted(() => {
+  hydrateMailImages();
   if (emailStore.contentData.showUnread && email.unread === EmailUnreadEnum.UNREAD) {
     email.unread = EmailUnreadEnum.READ;
     emailRead([email.emailId]);
@@ -129,6 +139,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  unmounted = true;
+  downloads.abort();
+  for (const url of attachmentUrls.values()) URL.revokeObjectURL(url);
+  attachmentUrls.clear();
   emailStore.contentData.showUnread = false;
 })
 
@@ -144,18 +158,54 @@ function toMessage(message) {
   return  message ? JSON.parse(message).message : '';
 }
 
-function formatImage(content) {
-  content = content || '';
-  const domain = settingStore.settings.r2Domain;
-  return  content.replace(/{{domain}}/g, toOssDomain(domain) + '/');
+async function attachmentUrl(key) {
+  if (attachmentUrls.has(key)) return attachmentUrls.get(key);
+  const blob = await privateAttachmentBlob(key, downloads.signal);
+  if (unmounted) throw new Error('Cancelled');
+  const url = URL.createObjectURL(blob);
+  attachmentUrls.set(key, url);
+  return url;
 }
 
-function showImage(key) {
-  if (!isImage(key)) return;
-  const url = cvtR2Url(key)
-  srcList.length = 0
-  srcList.push(url)
-  showPreview.value = true
+async function hydrateMailImages() {
+  // Parse in an inert template so no tracker can load during preprocessing.
+  const template = document.createElement('template');
+  template.innerHTML = email.content || '';
+  const domain = (settingStore.settings.r2Domain || '').replace(/\/$/, '');
+  const domainUrl = domain.startsWith('https://') ? domain : (domain ? 'https://' + domain : '');
+  renderedHtml.value = template.innerHTML;
+  for (const img of template.content.querySelectorAll('img')) {
+    const source = img.getAttribute('src') || '';
+    let key = source.startsWith('{{domain}}') ? source.slice(10) : source;
+    if (domainUrl && source.startsWith(domainUrl + '/attachments/')) key = source.slice(domainUrl.length + 1);
+    if (!key.startsWith('attachments/')) continue;
+    img.removeAttribute('src');
+    try { img.setAttribute('src', await attachmentUrl(key)); }
+    catch (error) { if (!unmounted) attachmentError.value = error.message; }
+  }
+  if (!unmounted) renderedHtml.value = template.innerHTML;
+}
+
+async function showImage(att) {
+  if (!isImage(att.filename)) return;
+  attachmentError.value = '';
+  attachmentBusy.value = att.key;
+  try {
+    const url = await attachmentUrl(att.key);
+    srcList.length = 0; srcList.push(url); showPreview.value = true;
+  } catch (error) { if (!unmounted) attachmentError.value = error.message; }
+  finally { attachmentBusy.value = ''; }
+}
+
+async function downloadAttachment(att) {
+  attachmentError.value = '';
+  attachmentBusy.value = att.key;
+  try {
+    const link = document.createElement('a');
+    link.href = await attachmentUrl(att.key); link.download = safeFilename(att.filename);
+    document.body.appendChild(link); link.click(); link.remove();
+  } catch (error) { if (!unmounted) attachmentError.value = error.message; }
+  finally { attachmentBusy.value = ''; }
 }
 
 function isImage(filename) {
@@ -229,6 +279,8 @@ const handleDelete = () => {
 }
 </script>
 <style scoped lang="scss">
+.attachment-download { background: none; border: 0; color: inherit; padding: 4px; display: flex; cursor: pointer; }
+.attachment-download:focus-visible { outline: 2px solid currentColor; }
 .box {
   height: 100%;
   overflow: hidden;

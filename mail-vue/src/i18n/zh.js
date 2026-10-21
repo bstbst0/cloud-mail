@@ -1,4 +1,7 @@
 const zh = {
+    loadRemoteImages: '載入遠端圖片（可能允許追蹤）',
+    download: '下載',
+
     inbox: '收件匣',
     drafts: '草稿匣',
     sent: '已寄信件',

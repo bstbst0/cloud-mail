@@ -160,12 +160,25 @@ const emailService = {
 			text, //邮件纯文本
 			content, //邮件内容
 			subject, //邮件标题
-			attachments //附件
+			attachments = [], //附件
+            cc = [], bcc = [], idempotencyKey, appOperationId
 		} = params;
 
 		const { resendTokens, r2Domain, send, domainList } = await settingService.query(c);
 
-		let { imageDataList, html } = await attService.toImageUrlHtml(c, content);
+		if (!Array.isArray(receiveEmail) || !receiveEmail.length || !Array.isArray(cc) || !Array.isArray(bcc) || receiveEmail.length+cc.length+bcc.length>50) throw new BizError('Invalid recipients',400);
+        const allRecipients=[...new Set([...receiveEmail,...cc,...bcc])];
+        if(name!==undefined&&(typeof name!=='string'||name.length>100||/[\r\n]/.test(name)))throw new BizError('Invalid sender name',400);
+        if(allRecipients.some(v=>typeof v!=='string'||v.length>320||!/^([^\s<>@]+)@([^\s<>@]+\.[^\s<>@]+)$/.test(v)))throw new BizError('Invalid recipients',400);
+        if(typeof subject!=='string'||subject.length>998||/[\r\n]/.test(subject)||typeof text!=='string'||typeof content!=='string'||text.length+content.length>1024*1024)throw new BizError('Invalid message body',400);
+        if(!Array.isArray(attachments)||attachments.length>10)throw new BizError('Too many attachments',413);
+        let attachmentBytes=0;
+        for(const a of attachments) {
+         if(typeof a.filename!=='string'||!a.filename||a.filename.length>255||/[\\/\x00-\x1f\x7f]/.test(a.filename)||typeof a.content!=='string'||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(a.content))throw new BizError('Invalid attachment',400);
+         attachmentBytes+=a.content.length*3/4;
+        }
+        if(attachmentBytes>20*1024*1024)throw new BizError('Attachments exceed 20 MiB',413);
+        let imageDataList=[],html='';
 
 		//判断是否关闭发件功能
 		if (send === settingConst.send.CLOSE) {
@@ -176,7 +189,7 @@ const emailService = {
 		const roleRow = await roleService.selectById(c, userRow.type);
 
 		//判断接收方是不是全部为站内邮箱
-		const allInternal = receiveEmail.every(email => {
+		const allInternal = allRecipients.every(email => {
 			const domain = '@' + emailUtils.getDomain(email);
 			return domainList.includes(domain);
 		});
@@ -198,12 +211,12 @@ const emailService = {
 		//如果不是管理员，权限设置了发送次数
 		if (c.env.admin !== userRow.email && roleRow.sendCount) {
 
-			if (userRow.sendCount >= roleRow.sendCount) {
+			if (Number(userRow.sendCount) >= Number(roleRow.sendCount)) {
 				if (roleRow.sendType === 'day') throw new BizError(t('daySendLimit'), 403);
 				if (roleRow.sendType === 'count') throw new BizError(t('totalSendLimit'), 403);
 			}
 
-			if (userRow.sendCount + receiveEmail.length > roleRow.sendCount) {
+			if (Number(userRow.sendCount) + allRecipients.length > Number(roleRow.sendCount)) {
 				if (roleRow.sendType === 'day') throw new BizError(t('daySendLack'), 403);
 				if (roleRow.sendType === 'count') throw new BizError(t('totalSendLack'), 403);
 			}
@@ -212,7 +225,7 @@ const emailService = {
 
 		const accountRow = await accountService.selectById(c, accountId);
 
-		if (!accountRow) {
+		if (!accountRow || accountRow.isDel) {
 			throw new BizError(t('senderAccountNotExist'));
 		}
 
@@ -228,8 +241,14 @@ const emailService = {
 
 		}
 
+        ({imageDataList,html}=await attService.toImageUrlHtml(c,content,userId));
+        if(imageDataList.length>10)throw new BizError('Too many inline images',413);
+        if(imageDataList.reduce((n,a)=>n+(a.size||0),attachmentBytes)>20*1024*1024)throw new BizError('Attachments exceed 20 MiB',413);
 		const domain = emailUtils.getDomain(accountRow.email);
 		const resendToken = resendTokens[domain];
+        // Persist the exact ID submitted on the wire so replying from Sent or
+        // an internal received copy references the original outbound message.
+        const outboundMessageId = `<${crypto.randomUUID()}@${domain}>`;
 
 		//如果接收方存在站外邮箱，又没有resend token
 		if (!resendToken && !allInternal) {
@@ -250,12 +269,20 @@ const emailService = {
 
 			emailRow = await this.selectById(c, emailId);
 
-			if (!emailRow) {
+			if (!emailRow || emailRow.userId !== userId) {
 				throw new BizError(t('notExistEmailReply'));
 			}
+            if(emailRow.messageId&&(typeof emailRow.messageId!=='string'||emailRow.messageId.length>998||/[\r\n]/.test(emailRow.messageId)))throw new BizError('Invalid original Message-ID',400);
 
 		}
 
+        let quotaReserved=false;
+        if(appOperationId && roleRow.sendCount && roleRow.sendType !== 'internal' && c.env.admin !== userRow.email) {
+         // Concurrent native sends cannot pass a stale counter check and overspend the role quota.
+         const reserved=await c.env.db.prepare('UPDATE user SET send_count=CAST(send_count AS INTEGER)+? WHERE user_id=? AND status=0 AND is_del=0 AND CAST(send_count AS INTEGER)+?<=? AND EXISTS(SELECT 1 FROM account WHERE account_id=? AND user_id=? AND is_del=0) RETURNING user_id').bind(allRecipients.length,userId,allRecipients.length,Number(roleRow.sendCount),accountId,userId).first();
+         if(!reserved)throw new BizError('Send quota unavailable',403);
+         quotaReserved=true;
+        }
 		let resendResult = {};
 
 		//存在站外时邮箱全部由resend发送
@@ -266,20 +293,23 @@ const emailService = {
 			const sendForm = {
 				from: `${name} <${accountRow.email}>`,
 				to: [...receiveEmail],
+                cc: [...cc], bcc: [...bcc],
 				subject: subject,
 				text: text,
 				html: html,
 				attachments: [...imageDataList, ...attachments]
 			};
+			sendForm.headers = { 'Message-ID': outboundMessageId };
 
-			if (sendType === 'reply') {
-				sendForm.headers = {
+			if (sendType === 'reply' && emailRow.messageId) {
+				sendForm.headers = { ...sendForm.headers,
 					'in-reply-to': emailRow.messageId,
 					'references': emailRow.messageId
 				};
 			}
 
-			resendResult = await resend.emails.send(sendForm);
+            c.set?.('providerAttempted',true);
+			resendResult = await resend.emails.send(sendForm,idempotencyKey ? {idempotencyKey} : undefined);
 
 		}
 
@@ -307,6 +337,9 @@ const emailService = {
 		emailData.type = emailConst.type.SEND;
 		emailData.userId = userId;
 		emailData.resendEmailId = data?.id;
+        emailData.messageId=outboundMessageId;
+        emailData.cc=JSON.stringify(cc.map(address=>({address,name:''})));
+        emailData.bcc=JSON.stringify(bcc.map(address=>({address,name:''})));
 
 		const recipient = [];
 
@@ -322,12 +355,22 @@ const emailService = {
 		}
 
 		//如果权限有发送次数增加用户发送次数
-		if (roleRow.sendCount && roleRow.sendType !== 'internal') {
-			await userService.incrUserSendCount(c, receiveEmail.length, userId);
+		if (!quotaReserved && roleRow.sendCount && roleRow.sendType !== 'internal') {
+			await userService.incrUserSendCount(c, allRecipients.length, userId);
 		}
 
 		//保存到数据库并返回结果
-		const emailResult = await orm(c).insert(email).values(emailData).returning().get();
+        let emailResult;
+        if(appOperationId) {
+         // Persist message linkage atomically; a killed Worker cannot lose the sent-copy reference.
+         const insert=orm(c).insert(email).values(emailData).toSQL();
+         await c.env.db.batch([
+          c.env.db.prepare(insert.sql).bind(...insert.params),
+          c.env.db.prepare('UPDATE app_send_operation SET message_id=last_insert_rowid() WHERE user_id=? AND operation_id=?').bind(userId,appOperationId)
+         ]);
+         const operationRow=await c.env.db.prepare('SELECT message_id FROM app_send_operation WHERE user_id=? AND operation_id=?').bind(userId,appOperationId).first();
+         emailResult=await this.selectById(c,operationRow.message_id);
+        } else emailResult=await orm(c).insert(email).values(emailData).returning().get();
 
 		//保存内嵌附件
 		if (imageDataList.length > 0) {
@@ -350,7 +393,7 @@ const emailService = {
 
 		//如果全是站内接收方，直接写入数据库
 		if (allInternal) {
-			await this.HandleOnSiteEmail(c, receiveEmail, emailResult, attList);
+			await this.HandleOnSiteEmail(c, allRecipients, emailResult, attList);
 		}
 
 		const dateStr = dayjs().format('YYYY-MM-DD');
@@ -391,6 +434,7 @@ const emailService = {
 			emailValues.toEmail = email;
 			emailValues.toName = emailUtils.getName(email);
 			emailValues.emailId = null;
+            emailValues.bcc = '[]';
 
 			const accountRow = accountList.find(accountRow => accountRow.email === email);
 
