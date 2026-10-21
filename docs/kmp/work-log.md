@@ -65,3 +65,7 @@ Each final result is recorded in implementation-report.md; running a test does n
 - Downloaded and parsed the actual native XML reports: 14 cases, 0 failures/errors/skips. All three Keychain/authenticated-cache tests passed. The link task was up-to-date on the second invocation, resolving the observed cache-kind fingerprint regression.
 - Preserved and inspected the current native iOS screenshot. Updated implementation/build/QA/UI evidence without erasing earlier failures. Final evidence-only commits do not change the tested functional source.
 - No production operation or actual external mail was performed. Signed releases, installed-device permissions/files/background behavior, live provider/staging compatibility and listed optional integrations remain explicit release work.
+
+## 2026-10-21 — Disposable real Cloudflare staging verification
+
+Created fresh isolated Worker/D1/KV/R2; no production resources or external email used. Real original-schema initialization, app migration/replay, KMP HTTPS Repository E2E, legacy Web-to-native incremental sync, revocation and cross-user attachment checks passed. Worker 36/36 tests and local HTTP regression passed. Fixed test-only D1 system-table empty check, proxy routing, legacy error assertion and mutable HTTP fixture cache reuse. Deleted all four cloud resources and both synthetic R2 objects after verification. Full evidence and unverified release gates: [staging-validation.md](staging-validation.md).

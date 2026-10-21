@@ -4,28 +4,60 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assume.assumeTrue
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.UUID
 import kotlin.test.*
 
-/** Opt-in, real HTTP integration against test/http-fixture.mjs, never a deployed mailbox. */
+/** Opt-in real HTTP integration against synthetic fixtures only, never a production mailbox. */
 class WorkerHttpIntegrationTest {
     @Test fun nativeRepositoriesConvergeThroughTheActualWorker() = runBlocking {
-        val server = System.getenv("CLOUD_MAIL_E2E_URL")
+        val staged = System.getenv("CLOUD_MAIL_STAGING_CONFIG")?.let {
+            MailJson.parseToJsonElement(Files.readString(Path.of(it))).jsonObject
+        }
+        val server = staged?.get("url")?.jsonPrimitive?.content ?: System.getenv("CLOUD_MAIL_E2E_URL")
         assumeTrue("Start the isolated Worker fixture and set CLOUD_MAIL_E2E_URL", server != null)
-        require(server == "http://127.0.0.1:8789") { "This test only accepts the isolated fixture address." }
+        val gate = staged?.get("gate")?.jsonPrimitive?.content
+        val password = staged?.get("password")?.jsonPrimitive?.content ?: "fixture-password"
+        if (staged != null) {
+            val uri = URI(server!!)
+            val name = staged.getValue("name").jsonPrimitive.content
+            val subdomain = staged.getValue("subdomain").jsonPrimitive.content
+            require(name.startsWith("cloud-mail-kmp-stage-") && uri.scheme == "https" &&
+                subdomain.matches(Regex("[a-z0-9-]+")) && uri.host == "$name.$subdomain.workers.dev" && uri.userInfo == null &&
+                uri.port == -1 && uri.rawQuery == null && uri.rawFragment == null && uri.path.isNullOrEmpty() &&
+                gate?.length == 64 && password.length >= 32) { "Only the isolated staging fixture is allowed." }
+        } else require(server == "http://127.0.0.1:8789") { "This test only accepts the isolated fixture address." }
         val client = HttpClient(CIO) {
+            if (staged != null) System.getenv("HTTPS_PROXY")?.let { endpoint ->
+                engine { proxy = io.ktor.client.engine.ProxyBuilder.http(io.ktor.http.Url(endpoint)) }
+            }
             followRedirects = false
             install(HttpTimeout) { requestTimeoutMillis = 15_000; connectTimeoutMillis = 5_000 }
+            if (gate != null) defaultRequest { headers.append("X-Cloud-Mail-Staging-Key", gate) }
         }
         val disconnected = HttpClient(MockEngine { throw java.io.IOException("Deliberately offline test transport") })
         try {
+            if (staged != null) {
+                val marker = MailJson.parseToJsonElement(client.get("$server/__staging/health").bodyAsText()).jsonObject
+                require(marker["testOnly"]?.jsonPrimitive?.content == "true" &&
+                    marker["runId"]?.jsonPrimitive?.content == staged.getValue("name").jsonPrimitive.content) {
+                    "Staging fixture identity mismatch; refusing login or writes."
+                }
+            }
             val anonymous = ApiClient(client, server!!) { null }
             assertEquals(401, assertFailsWith<MailException> { anonymous.login("user1@example.com", "wrong") }.code)
-            val first = anonymous.login("user1@example.com", "fixture-password")
-            val second = anonymous.login("user1@example.com", "fixture-password")
-            val recipient = anonymous.login("user2@example.com", "fixture-password")
+            val first = anonymous.login("user1@example.com", password)
+            val second = anonymous.login("user1@example.com", password)
+            val recipient = anonymous.login("user2@example.com", password)
             val firstApi = ApiClient(client, server) { first.token }
             val secondApi = ApiClient(client, server) { second.token }
             val recipientApi = ApiClient(client, server) { recipient.token }

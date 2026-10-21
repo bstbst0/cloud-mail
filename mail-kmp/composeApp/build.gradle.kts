@@ -100,6 +100,16 @@ compose.desktop {
     }
 }
 
+// HTTP fixtures are mutable external state; never reuse a previous test result.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    val httpFixture = providers.environmentVariable("CLOUD_MAIL_E2E_URL").isPresent ||
+        providers.environmentVariable("CLOUD_MAIL_STAGING_CONFIG").isPresent
+    if (httpFixture) {
+        outputs.upToDateWhen { false }
+        outputs.doNotCacheIf("HTTP integration requires a live fixture") { true }
+    }
+}
+
 // Development HTTP is opt-in for Gradle launches; installers never inherit this bypass.
 tasks.withType<JavaExec>().configureEach {
     if (name == "run" && allowLocalHttp.get()) {
