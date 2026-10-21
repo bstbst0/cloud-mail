@@ -17,22 +17,19 @@ collect() {
   run_timed 20 xcrun simctl spawn "$device" log show --last 1m --style compact --predicate 'process == "Cloud Mail" OR process == "amfid" OR process == "launchd_sim" OR process == "runningboardd"' > "$evidence/startup.log" 2>&1 || true
 }
 trap collect EXIT
-# Unsigned simulator builds need an application identity for real Keychain use.
-# This ad-hoc identity is for disposable CI simulators, not distribution signing.
-cat > "$evidence/app.entitlements" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>get-task-allow</key><true/>
-<key>application-identifier</key><string>com.cloudmail.app</string>
-<key>keychain-access-groups</key><array><string>com.cloudmail.app</string></array>
-</dict></plist>
-PLIST
-printf 'Sign simulator app identity\n'
-run_timed 60 codesign --force --sign - --identifier com.cloudmail.app --generate-entitlement-der --entitlements "$evidence/app.entitlements" "$app"
+# Xcode embeds simulator entitlements and signs only the host-side executable.
+# Do not attach iOS entitlements to a macOS signature with manual codesign.
 printf 'Verify simulator app signature\n'
 run_timed 30 codesign --verify --strict --verbose=2 "$app"
-run_timed 30 codesign --display --entitlements - --verbose=4 "$app"
+run_timed 30 codesign --display --verbose=4 "$app"
+run_timed 30 xcrun segedit "$app/Cloud Mail" -extract __TEXT __entitlements "$evidence/app-simulated.entitlements"
+python3 - "$evidence/app-simulated.entitlements" <<'PYIDENTITY'
+import plistlib, sys
+with open(sys.argv[1], 'rb') as source:
+    identity = plistlib.load(source)
+if identity.get('application-identifier') != 'com.cloudmail.app' or identity.get('keychain-access-groups') != ['com.cloudmail.app']:
+    raise SystemExit('App executable has an unexpected simulator identity')
+PYIDENTITY
 printf 'Install simulator app\n'
 run_timed 180 xcrun simctl install "$device" "$app"
 printf 'Launch simulator app\n'

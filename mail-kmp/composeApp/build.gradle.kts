@@ -1,4 +1,3 @@
-import java.util.concurrent.TimeUnit
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 plugins {
     alias(libs.plugins.kotlin)
@@ -12,12 +11,39 @@ val configuredServerUrl = providers.gradleProperty("cloudMailServerUrl").orElse(
 val allowLocalHttp = providers.gradleProperty("cloudMailAllowLocalHttp").map { it == "true" }.orElse(false)
 fun quotedBuildString(value: String): String = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
 
+// Simulator entitlements belong in Mach-O sections, not the host macOS signature.
+// https://youtrack.jetbrains.com/issue/KT-61470
+val simulatorTestEntitlements = layout.projectDirectory.file("src/iosTest/keychain-test.entitlements")
+val simulatorTestDer = layout.buildDirectory.file("ios-test-identity/keychain-test.der")
+val encodeSimulatorTestEntitlements = tasks.register<Exec>("encodeSimulatorTestEntitlements") {
+    inputs.file(simulatorTestEntitlements)
+    outputs.file(simulatorTestDer)
+    doFirst { simulatorTestDer.get().asFile.parentFile.mkdirs() }
+    commandLine("python3", rootProject.file("scripts/run-with-timeout.py").absolutePath, "60",
+        "/usr/bin/derq", "query", "-f", "xml", "-i", simulatorTestEntitlements.asFile.absolutePath,
+        "-o", simulatorTestDer.get().asFile.absolutePath, "--raw")
+}
+
 kotlin {
     androidTarget { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
     jvm("desktop") { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
     iosArm64 { binaries.framework { baseName = "CloudMail"; isStatic = true } }
-    iosX64 { binaries.framework { baseName = "CloudMail"; isStatic = true } }
-    iosSimulatorArm64 { binaries.framework { baseName = "CloudMail"; isStatic = true } }
+    listOf(
+        iosX64 { binaries.framework { baseName = "CloudMail"; isStatic = true } },
+        iosSimulatorArm64 { binaries.framework { baseName = "CloudMail"; isStatic = true } }
+    ).forEach { simulator ->
+        simulator.testRuns.configureEach {
+            executionSource.binary.linkerOpts(
+                "-sectcreate", "__TEXT", "__entitlements", simulatorTestEntitlements.asFile.absolutePath,
+                "-sectcreate", "__TEXT", "__ents_der", simulatorTestDer.get().asFile.absolutePath
+            )
+            executionSource.binary.linkTaskProvider.configure {
+                dependsOn(encodeSimulatorTestEntitlements)
+                inputs.file(simulatorTestEntitlements)
+                inputs.file(simulatorTestDer)
+            }
+        }
+    }
     sourceSets {
         commonMain.dependencies {
             implementation(compose.runtime); implementation(compose.foundation)
@@ -86,30 +112,5 @@ tasks.withType<JavaExec>().configureEach {
 tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
     standalone.set(false)
     testLogging { events("started", "passed", "failed", "skipped") }
-    // Simulator CLI tests have no app identity. Give only this test executable
-    // its own ad-hoc Keychain group; never use a production signing identity.
-    val testEntitlements = layout.projectDirectory.file("src/iosTest/keychain-test.entitlements")
-    inputs.file(testEntitlements)
-    doFirst {
-        val testExecutable = executable
-        val timeoutScript = rootProject.file("scripts/run-with-timeout.py").absolutePath
-        fun signingCommand(vararg arguments: String) {
-            val process = ProcessBuilder(listOf("python3", timeoutScript, "60") + arguments)
-                .inheritIO().start()
-            if (!process.waitFor(90, TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                error("Simulator test signature tooling timed out")
-            }
-            check(process.exitValue() == 0) { "Simulator test signature verification failed" }
-        }
-        println("Sign isolated native test identity")
-        signingCommand("codesign", "--force", "--sign", "-", "--identifier",
-            "com.cloudmail.app.tests", "--generate-entitlement-der", "--entitlements",
-            testEntitlements.asFile.absolutePath, testExecutable.absolutePath)
-        signingCommand("codesign", "--verify", "--strict", "--verbose=2", testExecutable.absolutePath)
-        signingCommand("codesign", "--display", "--entitlements", "-", "--verbose=4", testExecutable.absolutePath)
-        println("Native test identity verified; execute simulator cases")
-    }
-
     providers.environmentVariable("CLOUD_MAIL_IOS_SIMULATOR").orNull?.let { device.set(it) }
 }

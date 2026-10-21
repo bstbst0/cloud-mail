@@ -209,12 +209,28 @@ jobs:
         id: ios_framework
         working-directory: mail-kmp
         run: ./gradlew --no-daemon --dependency-verification=strict :composeApp:linkDebugFrameworkIosX64 :composeApp:linkDebugTestIosX64
-      - name: Build unsigned simulator app
+      - name: Verify embedded native test identity
+        working-directory: mail-kmp
+        run: |
+          mkdir -p composeApp/build/ios-smoke
+          python3 scripts/run-with-timeout.py 30 xcrun segedit composeApp/build/bin/iosX64/debugTest/test.kexe -extract __TEXT __entitlements composeApp/build/ios-smoke/test-simulated.entitlements -extract __TEXT __ents_der composeApp/build/ios-smoke/test-simulated.der
+          python3 - <<'PYIDENTITY'
+          import plistlib
+          from pathlib import Path
+          root = Path('composeApp/build/ios-smoke')
+          with (root / 'test-simulated.entitlements').open('rb') as source:
+              identity = plistlib.load(source)
+          if identity.get('application-identifier') != 'com.cloudmail.app.tests' or identity.get('keychain-access-groups') != ['com.cloudmail.app.tests']:
+              raise SystemExit('Native test executable has an unexpected simulator identity')
+          if not (root / 'test-simulated.der').stat().st_size:
+              raise SystemExit('Native test executable is missing DER simulator entitlements')
+          PYIDENTITY
+      - name: Build ad-hoc signed simulator app
         working-directory: mail-kmp
         run: >-
           xcodebuild -project iosApp/CloudMail.xcodeproj -scheme CloudMail
           -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=NO ARCHS=x86_64
+          -derivedDataPath build/ios-simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- ARCHS=x86_64
           SKIP_KOTLIN_GRADLE_BUILD=YES
           'FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../composeApp/build/bin/iosX64/debugFramework'
           build
@@ -229,6 +245,12 @@ jobs:
         timeout-minutes: 10
         working-directory: mail-kmp
         run: bash scripts/ios-startup-smoke.sh 'build/ios-simulator/Build/Products/Debug-iphonesimulator/Cloud Mail.app'
+      - name: Preserve startup evidence before native integration tests
+        uses: actions/upload-artifact@v4
+        if: always() && steps.ios_framework.outcome == 'success'
+        with:
+          name: cloud-mail-ios-startup-evidence
+          path: mail-kmp/composeApp/build/ios-smoke
       - name: Native crypto, Keychain and shared tests on booted simulator
         timeout-minutes: 30
         if: always() && steps.ios_framework.outcome == 'success'
