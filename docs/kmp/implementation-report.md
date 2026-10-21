@@ -1,6 +1,6 @@
 # Cloud Mail KMP implementation report
 
-Integration checkpoint: 2026-10-20 (UTC). Review is available in [Draft PR #19](https://github.com/bstbst0/cloud-mail/pull/19). Local verification is complete; hosted platform verification is still being resolved. It is not a claim that all release acceptance criteria have passed. No production deployment, migration, external test mail, DNS/MX change or production-data mutation has been performed.
+Integration checkpoint: 2026-10-21 (UTC). Review is available in [Draft PR #19](https://github.com/bstbst0/cloud-mail/pull/19). Local verification is complete; hosted platform verification is still being resolved. It is not a claim that all release acceptance criteria have passed. No production deployment, migration, external test mail, DNS/MX change or production-data mutation has been performed.
 
 ## Delivered source
 
@@ -37,9 +37,9 @@ Public R2/S3 bucket or custom-domain exposure must be closed by the operator; au
 | Android | 19 unit tests passed, lint 0 errors, current debug APK assembled and apksigner verified v2 signature | Build/unit/lint verified; actual API 35 emulator install and native startup passed |
 | Linux desktop | Strict DEB packaging passed; extracted bundled executable launched and login screenshot inspected | Implemented, packaged and startup verified; installation/desktop vault integration remains a release check |
 | Worker ↔ native HTTP end-to-end | Actual CIO-to-Worker test passed, including offline queue, second device, internal send/attachment/reply, idempotency and logout | Implemented and verified with isolated D1/KV/R2 |
-| iOS | ARM64 and Intel simulator frameworks compiled; the Xcode host built at b8f4e14. Historical native run: 11/14 passed, 3 Keychain identity failures corrected in source. Latest run could not execute those cases due to simulator migration/native-link timeouts | Source/framework/host build verified; startup and corrected Keychain execution still pending |
+| iOS | ARM64 and Intel simulator frameworks and the iOS 17.2-minimum Xcode host built at bfb9b33. Historical native run: 11/14 passed, 3 Keychain identity failures. Latest simulator boot succeeded, but launchd rejected the app/test signatures before any test cases executed; signature corrections remain unverified | Source/framework/host build verified; startup and corrected Keychain execution still pending |
 | Windows/macOS desktop | Actual Windows and macOS hosted Desktop jobs passed, including UI/tests and native installer packaging | Build/test/package verified in CI; signed installation and OS integration manual checks remain |
-| Hosted GitHub Actions | Run 39476429175 at f6dc9a0 passed seven jobs, including all Desktop platforms, Android install/startup and separate ARM64 compilation. Intel iOS runtime job timed out during boot and native test linking | Seven jobs passed; iOS runtime harness correction awaiting rerun |
+| Hosted GitHub Actions | Run 39516644123 at bfb9b33 passed seven jobs, including all Desktop platforms, Android install/startup and separate ARM64 compilation. Intel iOS runtime job failed with simulator code-signing rejection | Seven jobs passed; iOS signature/runtime correction awaiting rerun |
 
 Detailed commands, failure/fix history and final APK/DEB hashes are in [QA validation](qa-validation.md) and [build validation](build-validation.md). Sanitized Linux/Android/macOS screenshots and actual interaction assertions are documented in [UI validation](ui-validation.md). Tests use synthetic mail. Provider tests intercept external calls; the HTTP fixture blocks all outbound Worker network and sends only between its synthetic local users. No live delivery claim is made.
 

@@ -1,3 +1,4 @@
+import java.util.concurrent.TimeUnit
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 plugins {
     alias(libs.plugins.kotlin)
@@ -84,17 +85,31 @@ tasks.withType<JavaExec>().configureEach {
 // Kotlin/Native standalone process mode has no usable Keychain bootstrap.
 tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
     standalone.set(false)
+    testLogging { events("started", "passed", "failed", "skipped") }
     // Simulator CLI tests have no app identity. Give only this test executable
     // its own ad-hoc Keychain group; never use a production signing identity.
     val testEntitlements = layout.projectDirectory.file("src/iosTest/keychain-test.entitlements")
     inputs.file(testEntitlements)
     doFirst {
         val testExecutable = executable
-        providers.exec {
-            commandLine("python3", rootProject.file("scripts/run-with-timeout.py").absolutePath,
-                "60", "codesign", "--force", "--sign", "-", "--entitlements",
-                testEntitlements.asFile.absolutePath, testExecutable.absolutePath)
-        }.result.get().assertNormalExitValue()
+        val timeoutScript = rootProject.file("scripts/run-with-timeout.py").absolutePath
+        fun signingCommand(vararg arguments: String) {
+            val process = ProcessBuilder(listOf("python3", timeoutScript, "60") + arguments)
+                .inheritIO().start()
+            if (!process.waitFor(90, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                error("Simulator test signature tooling timed out")
+            }
+            check(process.exitValue() == 0) { "Simulator test signature verification failed" }
+        }
+        println("Sign isolated native test identity")
+        signingCommand("codesign", "--force", "--sign", "-", "--identifier",
+            "com.cloudmail.app.tests", "--generate-entitlement-der", "--entitlements",
+            testEntitlements.asFile.absolutePath, testExecutable.absolutePath)
+        signingCommand("codesign", "--verify", "--strict", "--verbose=2", testExecutable.absolutePath)
+        signingCommand("codesign", "--display", "--entitlements", "-", "--verbose=4", testExecutable.absolutePath)
+        println("Native test identity verified; execute simulator cases")
     }
+
     providers.environmentVariable("CLOUD_MAIL_IOS_SIMULATOR").orNull?.let { device.set(it) }
 }

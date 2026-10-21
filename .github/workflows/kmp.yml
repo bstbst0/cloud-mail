@@ -188,6 +188,16 @@ jobs:
       CLOUD_MAIL_IOS_RUNTIME_PREFIX: com.apple.CoreSimulator.SimRuntime.iOS-18-
     steps:
       - uses: actions/checkout@v4
+      - name: Validate required Compose iOS host metadata
+        working-directory: mail-kmp
+        run: |
+          python3 - <<'PYPLIST'
+          import plistlib
+          with open('iosApp/CloudMail/Info.plist', 'rb') as source:
+              info = plistlib.load(source)
+          if info.get('CADisableMinimumFrameDurationOnPhone') is not True:
+              raise SystemExit('Compose iOS requires CADisableMinimumFrameDurationOnPhone=true')
+          PYPLIST
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -226,7 +236,7 @@ jobs:
         run: |
           source scripts/ios-simulator.sh
           boot_cloud_mail_simulator
-          ./gradlew --no-daemon --dependency-verification=strict :composeApp:iosX64Test
+          ./gradlew --no-daemon --dependency-verification=strict --info :composeApp:iosX64Test
       - uses: actions/upload-artifact@v4
         if: always() && steps.ios_framework.outcome == 'success'
         with:
