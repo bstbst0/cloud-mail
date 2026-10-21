@@ -71,3 +71,8 @@ Local and hosted regressions have been repaired and revalidated. The PR is ready
 ## Additional isolated cloud verification — 2026-10-21
 
 Actual KMP Repository HTTPS end-to-end test passed against freshly provisioned Cloudflare Workers/D1/KV/R2 (1 test, zero failures/errors/skips). Original initialized-schema migration/replay, legacy Web state updates to native cursor/tombstones, session revocation and cross-user attachment access denial also passed. Worker regression remains 36/36. All temporary cloud resources were removed; production was untouched. This does not verify live Resend or physical-device behavior. See [staging-validation.md](staging-validation.md) for exact resources, checks, corrected failures, cleanup and remaining gates.
+
+
+## 2026-10-21 — Authorized production backup and deployment
+
+Verified full D1 export/restoration, rehearsed migration against the restored production schema, applied 29 additive migration statements, and deployed Worker plus compatible Vue assets. Original resource bindings, secrets, mail records, Email Routing and cron retained. Fixed-route unauthenticated production smoke checks passed. Existing Cloudflare Access blocks current Android login; existing R2 custom-domain policy remains a release-security gate. Full evidence and recovery identifiers: [production-release-2026-10-21.md](production-release-2026-10-21.md).

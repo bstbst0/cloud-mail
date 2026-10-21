@@ -1,6 +1,6 @@
 # Native API migration and rollback
 
-No production migration or deployment has been executed. Migration is additive and requires the existing Cloud Mail initialized/current schema (`email`, `account`, `attachments`, `star`, `user`). Review `mail-worker/migrations/0001_app_v1.sql` and export a D1 backup before applying in an isolated staging environment, then production during an approved release.
+Production backup and release were explicitly authorized and executed on 2026-10-21; see [the release record](production-release-2026-10-21.md) for backup verification, deployed version, rollback guidance and remaining Access/R2 gates. Migration is additive and requires the existing Cloud Mail initialized/current schema (`email`, `account`, `attachments`, `star`, `user`). Review `mail-worker/migrations/0001_app_v1.sql` and export a D1 backup before applying in an isolated staging environment, then production during an approved release.
 
 Local/staging command: `npx wrangler d1 migrations apply <database-name> --local --config <local-config>`. Production requires separately authorized `--remote` use. All native tables and indexes are prefixed `app_`; existing data/columns are preserved. Legacy intake, Web actions, webhook status writes, ownership changes, physical cleanup and attachment changes are captured by SQLite triggers inside the original transaction. Seeding records existing email IDs once. Reapplying migration does not erase cursors or duplicate seed events.
 

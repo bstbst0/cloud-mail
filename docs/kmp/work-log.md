@@ -69,3 +69,8 @@ Each final result is recorded in implementation-report.md; running a test does n
 ## 2026-10-21 — Disposable real Cloudflare staging verification
 
 Created fresh isolated Worker/D1/KV/R2; no production resources or external email used. Real original-schema initialization, app migration/replay, KMP HTTPS Repository E2E, legacy Web-to-native incremental sync, revocation and cross-user attachment checks passed. Worker 36/36 tests and local HTTP regression passed. Fixed test-only D1 system-table empty check, proxy routing, legacy error assertion and mutable HTTP fixture cache reuse. Deleted all four cloud resources and both synthetic R2 objects after verification. Full evidence and unverified release gates: [staging-validation.md](staging-validation.md).
+
+
+## 2026-10-21 — Authorized production backup and deployment
+
+Verified full D1 export/restoration, rehearsed migration against the restored production schema, applied 29 additive migration statements, and deployed Worker plus compatible Vue assets. Original resource bindings, secrets, mail records, Email Routing and cron retained. Fixed-route unauthenticated production smoke checks passed. Existing Cloudflare Access blocks current Android login; existing R2 custom-domain policy remains a release-security gate. Full evidence and recovery identifiers: [production-release-2026-10-21.md](production-release-2026-10-21.md).
