@@ -1,5 +1,8 @@
 # Cloud Mail native release checklist
 
+Automated checkpoint: functional source `32a62a4` passed all nine hosted jobs in [run 39531990119](https://github.com/bstbst0/cloud-mail/actions/runs/39531990119), including iOS 14/14 native tests and unsigned physical-device compilation. The remaining checkboxes are release checks; green CI does not complete signed installation, manual device workflows or private staging validation.
+
+
 Reviewed 2026-10-19. This is an operator acceptance checklist, not a release approval or evidence that its unchecked items passed. Attach results for the exact release commit and distinguish implemented code from executed validation. Use [implementation report](implementation-report.md), [build results](build-validation.md), [QA evidence](qa-validation.md) and [migration/rollback plan](backend-migration.md).
 
 ## Source and build integrity

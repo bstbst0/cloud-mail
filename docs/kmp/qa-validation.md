@@ -1,6 +1,10 @@
 # QA evidence and reproducible checks
 
-Initial verification: 2026-10-13. Acceptance/CI review updated 2026-10-20. Environment: isolated Linux workspace, Node 24.19.0, plus the explicitly identified hosted GitHub Actions jobs below. No production credentials, deployed databases, object buckets, DNS/MX, or external mail recipients were used. Current native build results belong in [build-validation.md](build-validation.md); the final cross-component result belongs in `implementation-report.md`. Checked-in tests and CI configuration alone are not passing results.
+Initial verification: 2026-10-13. Acceptance/CI review updated 2026-10-21. Environment: isolated Linux workspace, Node 24.19.0, plus the explicitly identified hosted GitHub Actions jobs below. No production credentials, deployed databases, object buckets, DNS/MX, or external mail recipients were used. Current native build results belong in [build-validation.md](build-validation.md); the final cross-component result belongs in `implementation-report.md`. Checked-in tests and CI configuration alone are not passing results.
+
+## Latest verified outcome
+
+Functional source `32a62a4`: [run 39531990119](https://github.com/bstbst0/cloud-mail/actions/runs/39531990119) passed all nine jobs. Downloaded native JUnit artifact `12316327734` independently confirms **14/14 iOS cases, zero failures/errors/skips**, including all three actual Keychain/CommonCrypto security tests. Both simulator architectures and the physical-device ARM64 framework/unsigned host compiled; the actual iOS 18.5 app startup passed and its screenshot was inspected. Earlier failures and pending states below are retained as chronological evidence, not current failures.
 
 ## Worker integration suite
 
@@ -204,3 +208,10 @@ Run 39476429175 (`f6dc9a0`) passed seven jobs: Worker/Web, Android, Android star
 - Prepared an independent physical-device ARM64 framework and unsigned `iphoneos` host build job. No team/profile or distribution entitlement is fabricated, and no installation is claimed from an unsigned device build. Native test cancellation now respects `!cancelled()` while still running after startup failure when the framework exists.
 
 - Follow-up local validation: strict offline Gradle dry-run with pinned Intel cache selection and both Intel test/device ARM64 framework tasks passed in 11s; workflow YAML, explicit matching cache flags, shell syntax and whitespace checks passed. Apple runtime and device build results require the next hosted run.
+
+## Final Apple runtime verification — 32a62a4
+
+- The first Intel prebuild completed in 11m 46s. At 02:38:26 UTC the native test link was `UP-TO-DATE`; cases executed at 02:38:30–36 and the Gradle test invocation passed in 2m 22s. This confirms that pinning the cache kind removed the redundant link. No test was removed or filtered, and no compilation task was excluded.
+- Parsed the three downloaded JUnit files: `ContractTest` 5, `RichTextTest` 6, `IosSecurityTest` 3; all passing, no errors or skips. The historical 11/14 Keychain failure is now resolved by passing runtime evidence, rather than inferred from signing or compilation.
+- Independent physical-device ARM64 framework plus unsigned `iphoneos` host job passed. This is compilation evidence, not physical installation or distribution signing.
+- The latest iOS screenshot was downloaded from the same successful run and visually inspected before replacing the repository evidence image. No credentials or real mail appear in it.

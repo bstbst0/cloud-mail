@@ -43,8 +43,8 @@ Device login/send, file-picker permissions, notification dialogs/background timi
 
 Run 39467778176 at `b8f4e14` passed actual Desktop tests and DMG packaging on `macos-15-intel`. Downloaded artifact 12285054939 contains 50 discovered cases: 49 passed and the Linux-only actual Worker HTTP fixture case was explicitly skipped. Its expanded inbox and compact 150%-type dark composer screenshots were visually inspected and preserved as [inbox](screenshots/macos-intel-inbox.png) and [composer](screenshots/macos-intel-composer-large-dark.png). They use synthetic fixtures, not private mail. The composer screenshot intentionally reflects the scroll position reached during the interaction test. This does not certify signed installation or native Keychain permission prompts.
 
-## iOS simulator startup (45527db)
+## iOS simulator startup (32a62a4)
 
-Actual Xcode 16.4 / iOS 18.5 Intel simulator install and launch passed in [run 39525856367](https://github.com/bstbst0/cloud-mail/actions/runs/39525856367). The startup artifact 12314666038 contains the original screenshot, bounded system log and extracted app/test simulator identities. The screenshot was downloaded and visually inspected: native Compose login renders with complete server/account/password controls and no observed Safe Area overlap or cropping. No private server or credentials were entered. This proves startup rendering, not signed-device behavior or the complete iOS mail/file/notification flow.
+Actual Xcode 16.4 / iOS 18.5 Intel simulator install and launch passed in [run 39531990119](https://github.com/bstbst0/cloud-mail/actions/runs/39531990119). The validation artifact 12316327734 contains the original screenshot, bounded system log and extracted app/test simulator identities. The screenshot was downloaded and visually inspected: native Compose login renders with complete server/account/password controls and no observed Safe Area overlap or cropping. No private server or credentials were entered. This proves startup rendering, not signed-device behavior or the complete iOS mail/file/notification flow.
 
 ![Actual iOS simulator login](screenshots/ios-simulator-login.png)

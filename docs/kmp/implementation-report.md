@@ -1,6 +1,6 @@
 # Cloud Mail KMP implementation report
 
-Integration checkpoint: 2026-10-21 (UTC). Review is available in [Draft PR #19](https://github.com/bstbst0/cloud-mail/pull/19). Local verification is complete; hosted platform verification is still being resolved. It is not a claim that all release acceptance criteria have passed. No production deployment, migration, external test mail, DNS/MX change or production-data mutation has been performed.
+Verification checkpoint: 2026-10-21 (UTC). Functional source `32a62a4` passed all **nine hosted jobs** in [run 39531990119](https://github.com/bstbst0/cloud-mail/actions/runs/39531990119), including actual iOS startup and all 14 native tests. Review is available in [PR #19](https://github.com/bstbst0/cloud-mail/pull/19). This is build/test evidence, not signed-release or full physical-device certification. No production deployment, migration, external test mail, DNS/MX change or production-data mutation has been performed.
 
 ## Delivered source
 
@@ -37,12 +37,12 @@ Public R2/S3 bucket or custom-domain exposure must be closed by the operator; au
 | Android | 19 unit tests passed, lint 0 errors, current debug APK assembled and apksigner verified v2 signature | Build/unit/lint verified; actual API 35 emulator install and native startup passed |
 | Linux desktop | Strict DEB packaging passed; extracted bundled executable launched and login screenshot inspected | Implemented, packaged and startup verified; installation/desktop vault integration remains a release check |
 | Worker ↔ native HTTP end-to-end | Actual CIO-to-Worker test passed, including offline queue, second device, internal send/attachment/reply, idempotency and logout | Implemented and verified with isolated D1/KV/R2 |
-| iOS simulator | At 45527db ARM64/Intel frameworks, the native test executable and Xcode host compiled. Embedded XML/DER test identities verified. Xcode-signed app installed and launched on iOS 18.5; actual Compose login screenshot inspected. The native test step timed out before case execution: its second Gradle invocation changed `konanCacheKind` and relinked the already-built executable | Framework/host build and actual startup verified; corrected Keychain result pending |
-| iOS physical-device target | Separate ARM64 framework and unsigned `iphoneos` host CI configuration prepared | Source implemented; device build/runtime not yet verified |
+| iOS simulator | ARM64/Intel frameworks and Xcode host compiled. App installed/launched on iOS 18.5; native Compose login screenshot inspected. Downloaded JUnit reports: Contract 5 + Rich text 6 + Security 3 = **14 passed, zero failures/errors/skips** | Build, actual startup, real Keychain CRUD and authenticated-cache security tests verified on Intel simulator |
+| iOS physical-device target | ARM64 framework and unsigned `iphoneos` Swift host built in the independent device job | Compilation verified; signed installation and physical-device runtime remain unverified |
 | Windows/macOS desktop | Actual Windows and macOS hosted Desktop jobs passed, including UI/tests and native installer packaging | Build/test/package verified in CI; signed installation and OS integration manual checks remain |
-| Hosted GitHub Actions | Run 39525856367 at 45527db passed seven jobs and the iOS app startup step; the native test step timed out during redundant linking before cases executed | Startup verified; deterministic native-cache correction awaiting rerun |
+| Hosted GitHub Actions | Run 39531990119 at 32a62a4: Worker/Web, Android, API 35 startup, Linux/Windows/macOS Desktop, Intel iOS runtime, ARM64 simulator framework and ARM64 device build all passed | **Nine jobs passed**; later evidence-only documentation commits do not change this tested functional source |
 
-Detailed commands, failure/fix history and final APK/DEB hashes are in [QA validation](qa-validation.md) and [build validation](build-validation.md). Sanitized Linux/Android/macOS screenshots and actual interaction assertions are documented in [UI validation](ui-validation.md). Tests use synthetic mail. Provider tests intercept external calls; the HTTP fixture blocks all outbound Worker network and sends only between its synthetic local users. No live delivery claim is made.
+Detailed commands, failure/fix history and final APK/DEB hashes are in [QA validation](qa-validation.md) and [build validation](build-validation.md). Sanitized Linux/Android/macOS/iOS screenshots and actual interaction assertions are documented in [UI validation](ui-validation.md). Tests use synthetic mail. Provider tests intercept external calls; the HTTP fixture blocks all outbound Worker network and sends only between its synthetic local users. No live delivery claim is made.
 
 ## Reproduce native HTTP end-to-end verification
 
@@ -58,11 +58,12 @@ The fixture uses only in-memory D1/KV/R2 and synthetic credentials; stop/restart
 ## Not implemented / optional integrations
 
 - Native Passkey login, APNs/FCM delivery and cross-device server drafts are not implemented. Password login, system-permitted polling and encrypted local drafts provide the core paths.
+- Native desktop notifications and synchronization after the desktop process exits are not implemented; running-app polling and manual sync are available.
 - Signed store releases, notarization and operator credentials are not provided. CI creates unsigned/debug review artifacts.
 - A native desktop HTML browser engine and universal desktop share sheet are not provided; the documented secure text/export alternatives are used.
 
 ## Outstanding release verification and risks
 
-Run the exact committed code through all hosted platform jobs and the [release checklist](release-checklist.md), including installed-app file permissions, native vaults, notification timing, accessibility, large mailboxes and a private staging Worker with two clients. Real Resend/S3, APNs/FCM and production compatibility-date behavior have not been verified. The local workerd currently falls back to compatibility date 2025-03-10. Hosted build, UI and simulator-startup evidence does not certify signed installation, actual-device background behavior or real-provider workflows.
+The functional source has passed all hosted platform jobs. Complete the [release checklist](release-checklist.md), including installed-app file permissions, native vaults, notification timing, accessibility, large mailboxes and a private staging Worker with two clients. Real Resend/S3, APNs/FCM and production compatibility-date behavior have not been verified. The local workerd currently falls back to compatibility date 2025-03-10. Hosted build, UI and simulator-startup evidence does not certify signed installation, actual-device background behavior or real-provider workflows.
 
-Local runtime regressions have been repaired and revalidated. The PR remains draft while iOS runtime and device/staging release gates are outstanding. Android API 35 installation and startup actually passed; device mail workflows and native permission/background behavior remain release checks. The latest iOS correction prebuilds the native test executable and Swift host before boot, allows bounded first-run simulator migration, and aligns the Xcode host minimum to 17.2 with its bundled native objects. Its execution is pending, and the oldest supported physical OS is not certified.
+Local and hosted regressions have been repaired and revalidated. The PR is ready for code review; physical-device/staging release checks remain outstanding. iOS simulator entitlements are embedded separately from host signing; fixed Intel compiler-cache selection prevents redundant post-boot relinking. The declared iOS minimum is 17.2; that oldest physical OS is not certified. Android/iOS startup and native tests do not establish installed-device mail, permission, sharing or background workflows. Optional integrations listed above remain unimplemented.
