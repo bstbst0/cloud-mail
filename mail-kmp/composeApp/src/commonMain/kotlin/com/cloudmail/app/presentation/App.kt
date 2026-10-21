@@ -135,7 +135,10 @@ internal fun MailWorkspace(state: AppState, vm: MailViewModel) {
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         if (state.offline) StatusBanner("Offline · Your saved mail is available. Changes will sync when connected.", false, vm::refresh)
                         state.error?.let { StatusBanner(it, true, { if (showSearch) search() else vm.refresh() }, vm::clearError) }
-                        if (state.loading || state.searching) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        if (state.loading || state.searching) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            if (state.loading) Text("Syncing mail · ${state.syncProcessed} updates saved", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall)
+                        }
                         if (showSearch) {
                             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(12.dp).focusRequester(searchFocus), placeholder = { Text("Search subject, people and message content") }, leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = { IconButton(onClick = { query = ""; unreadOnly = false; attachmentsOnly = false; after = ""; before = ""; vm.search(""); showSearch = false }) { Icon(Icons.Default.Close, "Close search") } }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { search() }))
                             FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -279,7 +282,7 @@ private fun MessageRow(message: Message, selected: Boolean, onClick: () -> Unit,
                     Spacer(Modifier.width(6.dp)); Text(message.receivedAt.take(10), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(message.subject.ifBlank { "(No subject)" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, fontWeight = if (message.read) FontWeight.Normal else FontWeight.SemiBold)
-                Text(message.text.replace(Regex("\\s+"), " ").take(180), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(remember(message.text) { message.text.take(512).replace(Regex("\\s+"), " ").take(180) }, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (message.attachments.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null, Modifier.size(14.dp)); Text(" ${message.attachments.size} attachment${if (message.attachments.size == 1) "" else "s"}", style = MaterialTheme.typography.labelSmall) }
                 if (message.folder == "sent") Text(deliveryLabel(message.status), style = MaterialTheme.typography.labelSmall, color = if (message.status in listOf(3, 4, 8)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }

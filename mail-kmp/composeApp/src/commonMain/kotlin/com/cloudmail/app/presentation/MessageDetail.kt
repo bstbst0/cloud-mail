@@ -2,6 +2,7 @@ package com.cloudmail.app.presentation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Forward
@@ -18,9 +19,12 @@ import com.cloudmail.app.*
 
 @Composable
 internal fun MessageDetail(message: Message, state: AppState, vm: MailViewModel, onDelete: (Message) -> Unit) {
-    var html by remember(message.id) { mutableStateOf(state.preferHtml && message.html.isNotBlank()) }
+    var html by remember(message.id, message.html.isNotBlank()) { mutableStateOf(state.preferHtml && message.html.isNotBlank()) }
     var loadImages by remember(message.id) { mutableStateOf(state.remoteImages) }
     val htmlRenderer = supportsHtmlRenderer()
+    val textChunks = remember(message.id, message.text) {
+        message.text.ifBlank { "This message has no plain text body. Switch to HTML to read its content." }.chunked(8192)
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
             Text(if (message.folder == "sent") deliveryLabel(message.status) else "Received message", Modifier.weight(1f).padding(start = 16.dp), style = MaterialTheme.typography.labelMedium, color = if (message.status in listOf(3, 4, 8)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -51,9 +55,10 @@ internal fun MessageDetail(message: Message, state: AppState, vm: MailViewModel,
                 }
                 if (!htmlRenderer) Text("This device uses a safe text rendering of HTML mail.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            item {
-                if (html && message.html.isNotBlank()) HtmlMessage(message.html, loadImages, Modifier.fillMaxWidth().heightIn(min = 320.dp, max = 640.dp))
-                else SelectionContainer { Text(message.text.ifBlank { "This message has no plain text body. Switch to HTML to read its content." }, style = MaterialTheme.typography.bodyLarge) }
+            if (html && message.html.isNotBlank()) item {
+                HtmlMessage(message.html, loadImages, Modifier.fillMaxWidth().heightIn(min = 320.dp, max = 640.dp))
+            } else items(textChunks) { chunk ->
+                SelectionContainer { Text(chunk, style = MaterialTheme.typography.bodyLarge) }
             }
             if (message.attachments.isNotEmpty()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

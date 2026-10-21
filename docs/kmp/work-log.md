@@ -74,3 +74,7 @@ Created fresh isolated Worker/D1/KV/R2; no production resources or external emai
 ## 2026-10-21 — Authorized production backup and deployment
 
 Verified full D1 export/restoration, rehearsed migration against the restored production schema, applied 29 additive migration statements, and deployed Worker plus compatible Vue assets. Original resource bindings, secrets, mail records, Email Routing and cron retained. Fixed-route unauthenticated production smoke checks passed. Existing Cloudflare Access blocks current Android login; existing R2 custom-domain policy remains a release-security gate. Full evidence and recovery identifiers: [production-release-2026-10-21.md](production-release-2026-10-21.md).
+
+## 2026-10-21 — Android jank and crash-path corrections
+
+User reported usable API access through newly enabled workers.dev domain but severe mailbox loading/jank and intermittent crashes. Corrected main-thread cache work, full-mailbox decryption per page, list retention of HTML, repeated Keystore resolution, queued refresh runs and unbounded plain-text layout. Added progress and HTML renderer failure handling, preserving complete encrypted offline bodies and session/account isolation. Added 500-message and dispatcher regressions plus 50-request refresh coalescing coverage. See [android-performance-fix-2026-10-21.md](android-performance-fix-2026-10-21.md) for scope, evidence and physical-device limitations.

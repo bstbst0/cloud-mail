@@ -21,6 +21,9 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
     private var searchActive = false
     private var searchGeneration = 0L
     private var syncJob: Job? = null
+    private var refreshJob: Job? = null
+    private var refreshRequested = false
+    private var cacheJob: Job? = null
     init {
         val server = platform.secret("server") ?: platform.defaultServerUrl
         val session = platform.secret("session")?.let { runCatching { MailJson.decodeFromString<Session>(it) }.getOrNull() }
@@ -48,12 +51,25 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
         syncJob = sessionScope.launch { while (isActive) { delay(if (_state.value.offline) 30_000L else _state.value.syncMinutes.coerceAtLeast(15) * 60_000L); refresh() } }
     }
     private fun publishCache() {
-        if (_state.value.session == null) return
+        cacheJob?.cancel()
+        cacheJob = sessionScope.launch {
+            try { publishCacheNow() } catch (error: Throwable) { report(error) }
+        }
+    }
+    private suspend fun publishCacheNow() = withContext(platform.cacheDispatcher) {
+        val generation = store.generation
+        val snapshot = _state.value
+        if (_state.value.session == null) return@withContext
         val settings = store.settings()
         platform.configureSync(settings.syncMinutes)
-        val cached = store.messages().associateBy { it.id }
-        val messages = cached.values.filter { !it.deleted && (_state.value.selectedAccountId == null || it.accountId == _state.value.selectedAccountId) && (if (_state.value.folder == "star") it.starred else it.folder == _state.value.folder) }.sortedWith(compareByDescending<Message> { it.receivedAt }.thenByDescending { it.id })
-        _state.update { old -> old.copy(drafts = store.drafts(), accounts = store.accounts(), messages = if (searchActive) old.messages.mapNotNull { found -> cached[found.id] }.filter { !it.deleted } else messages, selected = old.selected?.let { selected -> cached[selected.id]?.takeUnless { it.deleted } }, theme = settings.theme, textScale = settings.textScale, remoteImages = settings.remoteImages, defaultAccountId = settings.defaultAccountId, gestureRead = settings.gestureRead, gestureDelete = settings.gestureDelete, syncMinutes = settings.syncMinutes, dynamicColor = settings.dynamicColor, preferHtml = settings.preferHtml) }
+        val cached = store.summaries().associateBy { it.id }
+        val selected = _state.value.selected?.let { store.message(it.id) }
+        val messages = cached.values.filter { !it.deleted && (snapshot.selectedAccountId == null || it.accountId == snapshot.selectedAccountId) && (if (snapshot.folder == "star") it.starred else it.folder == snapshot.folder) }.sortedWith(compareByDescending<Message> { it.receivedAt }.thenByDescending { it.id })
+        val drafts = store.drafts()
+        val accounts = store.accounts()
+        currentCoroutineContext().ensureActive()
+        if (store.generation != generation || _state.value.session == null) return@withContext
+        _state.update { old -> if (old.folder != snapshot.folder || old.selectedAccountId != snapshot.selectedAccountId || old.query != snapshot.query) old else old.copy(drafts = drafts, accounts = accounts, messages = if (searchActive) old.messages.mapNotNull { found -> cached[found.id] }.filter { !it.deleted } else messages, selected = old.selected?.let { current -> if (cached[current.id]?.deleted != false) null else selected?.takeIf { it.id == current.id && !it.deleted } ?: current }, theme = settings.theme, textScale = settings.textScale, remoteImages = settings.remoteImages, defaultAccountId = settings.defaultAccountId, gestureRead = settings.gestureRead, gestureDelete = settings.gestureDelete, syncMinutes = settings.syncMinutes, dynamicColor = settings.dynamicColor, preferHtml = settings.preferHtml) }
     }
     private suspend fun report(error: Throwable, preserveBusy: Boolean = false) {
         currentCoroutineContext().ensureActive()
@@ -81,17 +97,35 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
                 currentCoroutineContext().ensureActive()
                 if (generation != authenticationGeneration) return@launch
                 platform.putSecret("server", validated); platform.putSecret("session", MailJson.encodeToString(session))
-                attach(validated, session); publishCache(); repository.sync(); currentCoroutineContext().ensureActive(); publishCache()
-                _state.update { it.copy(loading = false, offline = false) }
+                attach(validated, session); publishCache(); refresh()
             } catch (error: Throwable) { report(error) }
         }
     }
     fun refresh() {
         if (api == null) return
-        sessionScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
-            try { val initial = store.cursor() == null; val arrived = repository.sync(); currentCoroutineContext().ensureActive(); publishCache(); if (!initial) platform.notifyMail(arrived); _state.update { it.copy(loading = false, offline = false) } }
-            catch (error: Throwable) { currentCoroutineContext().ensureActive(); publishCache(); report(error) }
+        if (refreshJob?.isActive == true) { refreshRequested = true; return }
+        refreshJob = sessionScope.launch {
+            do {
+                refreshRequested = false
+                _state.update { it.copy(loading = true, error = null, syncProcessed = 0) }
+                try {
+                    val initial = withContext(platform.cacheDispatcher) { store.cursor() == null }
+                    val arrived = repository.sync { count ->
+                        _state.update { it.copy(syncProcessed = count) }
+                        if (initial && count in 1..10) publishCacheNow()
+                    }
+                    currentCoroutineContext().ensureActive()
+                    publishCacheNow()
+                    if (!initial) platform.notifyMail(arrived)
+                    _state.update { it.copy(loading = false, offline = false) }
+                } catch (error: Throwable) {
+                    currentCoroutineContext().ensureActive()
+                    try { publishCacheNow() } catch (cacheError: Throwable) {
+                        if (cacheError is CancellationException) throw cacheError
+                    }
+                    report(error)
+                }
+            } while (refreshRequested && isActive)
         }
     }
     fun clearError() { _state.update { it.copy(error = null) } }
@@ -115,14 +149,30 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
         _state.update { it.copy(selected = message) }
         if (message == null) return
         if (!message.read) markRead(message, true)
-        sessionScope.launch { try { repository.detail(message.id); currentCoroutineContext().ensureActive(); publishCache() } catch (error: Throwable) { report(error) } }
+        sessionScope.launch { try {
+            withContext(platform.cacheDispatcher) { store.message(message.id) }?.let { cached ->
+                if (_state.value.selected?.id == message.id) _state.update { it.copy(selected = cached) }
+            }
+            repository.detail(message.id); currentCoroutineContext().ensureActive(); publishCache() } catch (error: Throwable) { report(error) } }
     }
-    private fun mutate(message: Message, kind: String, value: Boolean) { repository.action(message, kind, value, platform.randomId()); publishCache(); refresh() }
+    private fun mutate(message: Message, kind: String, value: Boolean) { sessionScope.launch {
+        try { withContext(platform.cacheDispatcher) { repository.action(message, kind, value, platform.randomId()) }; publishCacheNow(); refresh() }
+        catch (error: Throwable) { report(error) }
+    } }
     fun markRead(message: Message, value: Boolean) = mutate(message, "read", value)
     fun star(message: Message, value: Boolean) = mutate(message, "star", value)
     fun delete(message: Message) = mutate(message, "delete", true)
     fun undoDelete(message: Message) = mutate(message.copy(deleted = true), "delete", false)
     fun compose(mode: String = "new", message: Message? = null) {
+        sessionScope.launch {
+            try {
+                val full = message?.let { withContext(platform.cacheDispatcher) { store.message(it.id) } }
+                currentCoroutineContext().ensureActive()
+                composeResolved(mode, full ?: message)
+            } catch (error: Throwable) { report(error) }
+        }
+    }
+    private fun composeResolved(mode: String, message: Message?) {
         val restored = if (mode == "new") store.drafts().firstOrNull() else null
         val account = message?.accountId?.takeIf { id -> _state.value.accounts.any { it.id == id } } ?: _state.value.defaultAccountId?.takeIf { id -> _state.value.accounts.any { it.id == id } } ?: _state.value.accounts.firstOrNull()?.id ?: return
         val quote = message?.let { "\n\nOn ${it.receivedAt}, ${it.fromAddress} wrote:\n${it.text}" } ?: ""
@@ -214,8 +264,10 @@ class MailViewModel(private val platform: PlatformServices = createPlatformServi
         val generation = ++authenticationGeneration
         // Invalidate background credentials before waiting for in-flight cache work.
         platform.putSecret("session", null)
-        loginJob?.cancel(); sessionJob.cancel(); searchJob?.cancel(); syncJob?.cancel(); searchActive = false; searchGeneration++
-        store.owner = ""; api = null
+        loginJob?.cancel(); sessionJob.cancel(); searchJob?.cancel(); syncJob?.cancel(); refreshJob?.cancel(); cacheJob?.cancel(); searchActive = false; searchGeneration++
+        // Keep the old partition fixed until cancelled background SQL completes.
+        // The next login joins that session job before changing the owner.
+        store.invalidate(); api = null
         _state.value = AppState(serverUrl = platform.secret("server") ?: platform.defaultServerUrl, secureStorage = platform.persistentSecureStorage, error = error)
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             withContext(NonCancellable) { repository.clearOwnerIf(owner) { generation == authenticationGeneration || store.owner != owner } }

@@ -39,8 +39,8 @@ class AndroidPlatform(private val context: Context = AndroidRuntime.context) : P
     override val defaultServerUrl = BuildConfig.DEFAULT_SERVER_URL
     override val allowLocalHttp = BuildConfig.DEBUG && BuildConfig.ALLOW_LOCAL_HTTP
     private val preferences = context.getSharedPreferences("encrypted-vault", Context.MODE_PRIVATE)
-    private val key: SecretKey
-        get() = synchronized(AndroidPlatform::class.java) {
+    private val key: SecretKey by lazy {
+        synchronized(AndroidPlatform::class.java) {
             val vault = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             (vault.getKey("cloudmail-aes-v1", null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
                 init(KeyGenParameterSpec.Builder("cloudmail-aes-v1", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
@@ -48,6 +48,7 @@ class AndroidPlatform(private val context: Context = AndroidRuntime.context) : P
                     .setKeySize(256).setRandomizedEncryptionRequired(true).build()); generateKey()
             }
         }
+    }
     private val codec = AndroidCipher { key }
     override fun encrypt(bytes: ByteArray): ByteArray = codec.encrypt(bytes)
     override fun decrypt(bytes: ByteArray): ByteArray = codec.decrypt(bytes)

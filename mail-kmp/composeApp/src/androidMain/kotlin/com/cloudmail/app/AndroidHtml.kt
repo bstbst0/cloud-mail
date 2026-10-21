@@ -5,7 +5,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -16,6 +17,11 @@ import java.io.ByteArrayInputStream
 /** Isolated email renderer: no script, bridges, file access, navigation, forms or mixed content. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable actual fun HtmlMessage(html: String, loadImages: Boolean, modifier: Modifier) {
+    var failed by remember(html) { mutableStateOf(false) }
+    if (failed) {
+        Text("The HTML renderer stopped. Switch to Plain text to continue reading.", modifier)
+        return
+    }
     val colors = MaterialTheme.colorScheme
     fun Color.cssColor() = "#" + (toArgb() and 0x00ffffff).toString(16).padStart(6, '0')
     val foreground = colors.onSurface.cssColor()
@@ -34,6 +40,11 @@ import java.io.ByteArrayInputStream
         }
     }, update = { view ->
         view.webViewClient = object : WebViewClient() {
+            override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                view?.tag = "cloudmail-renderer-gone"
+                failed = true
+                return true
+            }
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?) = true
             @Deprecated("Legacy navigation hook") override fun shouldOverrideUrlLoading(view: WebView?, url: String?) = true
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
@@ -49,7 +60,10 @@ import java.io.ByteArrayInputStream
         // CSP precedes attacker-controlled markup. JavaScript is additionally disabled at engine level.
         val content = "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"$csp\"><style>body{font-family:system-ui,sans-serif;overflow-wrap:anywhere;margin:8px;color:$foreground;background-color:$background}a{color:$link}img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>$html</body></html>"
         if (view.tag != content) { view.tag = content; view.loadDataWithBaseURL("https://email.invalid/", content, "text/html", "UTF-8", null) }
-    }, onRelease = { it.stopLoading(); it.loadUrl("about:blank"); it.destroy() })
+    }, onRelease = {
+        if (it.tag != "cloudmail-renderer-gone") { it.stopLoading(); it.loadUrl("about:blank") }
+        it.destroy()
+    })
 }
 private fun privateHost(host: String): Boolean {
     val value = host.lowercase().trimEnd('.')

@@ -49,7 +49,7 @@ class ApiClient(val client: HttpClient, private val server: String, private val 
     }
     suspend fun login(email: String, password: String) = request<Session>(HttpMethod.Post, "login", MailJson.encodeToString(LoginRequest(email, password)))
     suspend fun logout() { request<kotlinx.serialization.json.JsonElement>(HttpMethod.Delete, "logout", allowEmpty = true) }
-    suspend fun sync(cursor: String?) = request<SyncPage>(HttpMethod.Get, "sync" + (cursor?.let { "?cursor=${it.encodeURLParameter()}" } ?: ""))
+    suspend fun sync(cursor: String?) = request<SyncPage>(HttpMethod.Get, "sync?limit=5" + (cursor?.let { "&cursor=${it.encodeURLParameter()}" } ?: ""))
     suspend fun message(id: Long) = request<Message>(HttpMethod.Get, "messages/$id")
     suspend fun action(action: PendingAction) = request<ActionResult>(HttpMethod.Post, "actions", MailJson.encodeToString(action))
     suspend fun send(request: SendRequest) = request<SendResult>(HttpMethod.Post, "send", MailJson.encodeToString(request))

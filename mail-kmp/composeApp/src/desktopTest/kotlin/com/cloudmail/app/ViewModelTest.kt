@@ -9,9 +9,35 @@ import kotlin.test.*
 
 class ViewModelTest {
     private val viewModels = mutableListOf<MailViewModel>()
-    private fun newViewModel(platform: PlatformServices) = MailViewModel(platform).also { viewModels += it }
+    private fun newViewModel(platform: PlatformServices) = MailViewModel(object : PlatformServices by platform {
+        override val cacheDispatcher = Dispatchers.Main
+    }).also { viewModels += it }
     @BeforeTest fun prepareMain() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
     @AfterTest fun restoreMain() { viewModels.forEach { it.dispose() }; viewModels.clear(); Dispatchers.resetMain() }
+    @Test fun repeatedRefreshesCoalesceInsteadOfQueuingMailboxDownloads() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var syncs = 0
+        val client = HttpClient(testEngine { request ->
+            val data = when {
+                request.url.encodedPath.endsWith("login") -> MailJson.encodeToString(Session("synthetic", 1, "me@example.com", 4_000_000_000))
+                request.url.encodedPath.endsWith("sync") -> {
+                    syncs++
+                    if (syncs == 1) release.await()
+                    MailJson.encodeToString(SyncPage(emptyList(), listOf(Account(1, "me@example.com")), "cursor", false))
+                }
+                else -> "null"
+            }
+            respond("{\"code\":200,\"data\":$data}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val vm = newViewModel(TestPlatform(client))
+        vm.login("https://cloud.test", "me@example.com", "password"); runCurrent()
+        repeat(50) { vm.refresh() }
+        assertEquals(1, syncs)
+        release.complete(Unit); runCurrent()
+        assertEquals(2, syncs)
+        assertFalse(vm.state.value.loading)
+        vm.logout(); runCurrent()
+    }
     @Test fun loginSyncReadDraftReplySendAndLogout() = runTest {
         var remote=Message(1,1,fromAddress="sender@example.com",subject="Hello",text="Message body",to=listOf("me@example.com"))
         var sends=0

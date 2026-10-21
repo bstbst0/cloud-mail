@@ -1,5 +1,6 @@
 package com.cloudmail.app
 
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -20,10 +21,10 @@ class MailRepository(val store: MailStore, private val sessionIsValid: () -> Boo
         currentCoroutineContext().ensureActive()
         if (store.generation != generation || !sessionIsValid()) throw CancellationException("Session changed")
     }
-    suspend fun sync(): List<Message> {
+    suspend fun sync(onPage: suspend (Int) -> Unit = {}): List<Message> = withContext(store.dispatcher) {
         val generation = store.generation
         val client = api()
-        return syncLock.withLock {
+        return@withContext syncLock.withLock {
             checkSession(generation)
             // Each operation keeps its ID until acknowledged. A rejected action is
             // removed before applying the authoritative state and later intentions.
@@ -40,14 +41,15 @@ class MailRepository(val store: MailStore, private val sessionIsValid: () -> Boo
                         checkSession(generation)
                         // A transient failure must retain the queued action for retry.
                         if (detailError.code !in listOf(403, 404, 410)) throw detailError
-                        store.messages().find { it.id == action.messageId }?.copy(deleted = true)
+                        store.message(action.messageId)?.copy(deleted = true)
                     }
                     checkSession(generation)
                     store.dropAction(action)
                     authoritative?.let { store.saveMessage(it) }
                 }
             }
-            val before = store.messages().map { it.id }.toSet()
+            val before = store.messageIds()
+            var synced = 0
             var page: SyncPage
             var cursor = store.cursor()
             do {
@@ -56,22 +58,25 @@ class MailRepository(val store: MailStore, private val sessionIsValid: () -> Boo
                     if (cursor != null && error.code in listOf(400, 409, 410)) client.sync(null) else throw error
                 }
                 checkSession(generation)
+                if (page.hasMore && page.cursor == cursor) throw MailException(502, "The server did not advance synchronization. Try refreshing again.")
                 store.merge(page); cursor = page.cursor
+                synced += page.messages.size
+                onPage(synced)
             } while (page.hasMore)
-            store.messages().filter { it.id !in before && it.folder == "inbox" && !it.deleted }
+            store.summaries().filter { it.id !in before && it.folder == "inbox" && !it.deleted }
         }
     }
     fun action(message: Message, kind: String, value: Boolean, operationId: String) {
         if (!sessionIsValid() || (store.accounts().isNotEmpty() && store.accounts().none { it.id == message.accountId })) return
-        val current = store.messages().find { it.id == message.id } ?: message
+        val current = store.message(message.id) ?: message
         val action = PendingAction(operationId, current.id, kind, value)
         store.queue(action, applyAction(current, action))
     }
     @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
-    suspend fun detail(id: Long): Message {
+    suspend fun detail(id: Long): Message = withContext(store.dispatcher) {
         val generation = store.generation
         val client = api()
-        return syncLock.withLock {
+        return@withContext syncLock.withLock {
             checkSession(generation)
             val message = client.message(id)
             checkSession(generation)
@@ -89,15 +94,15 @@ class MailRepository(val store: MailStore, private val sessionIsValid: () -> Boo
             message.copy(html = html, cachedHtmlSource = if (html != message.html) message.html else "").also { store.saveMessage(it) }
         }
     }
-    suspend fun search(query: String, read: Boolean? = null, hasAttachment: Boolean? = null, after: String? = null, before: String? = null, folder: String? = null, accountId: Long? = null): List<Message> {
+    suspend fun search(query: String, read: Boolean? = null, hasAttachment: Boolean? = null, after: String? = null, before: String? = null, folder: String? = null, accountId: Long? = null): List<Message> = withContext(store.dispatcher) {
         val generation = store.generation
         val client = api()
-        return syncLock.withLock {
+        return@withContext syncLock.withLock {
             checkSession(generation)
             val messages = client.search(query, read, hasAttachment, after, before, folder, accountId)
             checkSession(generation)
             messages.forEach { store.saveMessage(it) }
-            val cached = store.messages().associateBy { it.id }
+            val cached = messages.mapNotNull { store.message(it.id) }.associateBy { it.id }
             messages.map { message -> cached[message.id] ?: message }
         }
     }

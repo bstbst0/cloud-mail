@@ -76,3 +76,7 @@ Actual KMP Repository HTTPS end-to-end test passed against freshly provisioned C
 ## 2026-10-21 — Authorized production backup and deployment
 
 Verified full D1 export/restoration, rehearsed migration against the restored production schema, applied 29 additive migration statements, and deployed Worker plus compatible Vue assets. Original resource bindings, secrets, mail records, Email Routing and cron retained. Fixed-route unauthenticated production smoke checks passed. Existing Cloudflare Access blocks current Android login; existing R2 custom-domain policy remains a release-security gate. Full evidence and recovery identifiers: [production-release-2026-10-21.md](production-release-2026-10-21.md).
+
+## Android performance correction — 2026-10-21
+
+Fixed UI-thread sync/cache decryption, whole-mailbox rereads per sync page, retained HTML in list state, repeated Android Keystore resolution, repeated refresh queues and large plain-text layout. Added initial sync progress/early results and renderer-process failure recovery. Final local validation: 53/53 desktop tests including actual isolated Worker HTTP flow, 19/19 Android unit tests, lint 0 errors/32 warnings and installable APK/signature verification passed. No physical-device crash log or local hardware-accelerated emulator was available; exact original crash cause and device smoothness are not claimed verified. See [android-performance-fix-2026-10-21.md](android-performance-fix-2026-10-21.md).

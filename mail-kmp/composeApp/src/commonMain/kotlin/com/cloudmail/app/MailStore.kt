@@ -5,14 +5,25 @@ import kotlinx.serialization.encodeToString
 
 /** All mailbox content, including queued actions and cursors, is authenticated-encrypted before SQL. */
 class MailStore(private val platform: PlatformServices) {
+    val dispatcher get() = platform.cacheDispatcher
     private val db = MailDatabase(platform.databaseDriver())
     var generation: Long = 0
         private set
     var owner: String = ""
         set(value) { field = value; generation++ }
+    fun invalidate() { generation++ }
     private inline fun <reified T> all(kind: String): List<T> = db.cacheQueries.entries(owner, kind).executeAsList().map { MailJson.decodeFromString(platform.decrypt(it.payload).decodeToString()) }
     private inline fun <reified T> put(kind: String, id: String, data: T) { db.cacheQueries.upsert(owner, kind, id, platform.encrypt(MailJson.encodeToString(data).encodeToByteArray())) }
     fun messages() = all<Message>("message")
+    /** Decode one row at a time; list UI never retains every full HTML body. */
+    fun summaries(): List<Message> = db.cacheQueries.entries(owner, "message") { _, payload ->
+        val message = MailJson.decodeFromString<Message>(platform.decrypt(payload).decodeToString())
+        message.copy(text = message.text.take(512), html = "", inlineAttachments = emptyList(), cachedHtmlSource = "")
+    }.executeAsList()
+    fun message(id: Long): Message? = db.cacheQueries.entry(owner, "message", id.toString()).executeAsOneOrNull()?.let {
+        MailJson.decodeFromString<Message>(platform.decrypt(it).decodeToString())
+    }
+    fun messageIds() = db.cacheQueries.entryIds(owner, "message").executeAsList().mapNotNull { it.toLongOrNull() }.toSet()
     fun accounts() = all<Account>("account")
     fun pending() = all<PendingAction>("action").sortedBy { it.sequence }
     fun drafts() = all<Draft>("draft")
@@ -29,7 +40,11 @@ class MailStore(private val platform: PlatformServices) {
     fun merge(page: SyncPage) = db.transaction {
         // Keep the old ownership map until revoked intentions have been removed.
         // A reset otherwise erases the only account association of queued actions.
-        val cachedMessages = messages().associateBy { it.id }
+        // Normal pages need only their own prior bodies. Scan the mailbox only
+        // when ownership actually changes, to remove revoked-account intentions.
+        val ownershipChanged = accounts().map { it.id }.toSet() != page.accounts.map { it.id }.toSet()
+        val cachedMessages = if (ownershipChanged) summaries().associateBy { it.id }
+            else page.messages.mapNotNull { message(it.id) }.associateBy { it.id }
         val allowedAccounts = page.accounts.map { it.id }.toSet()
         val revokedIds = cachedMessages.values.filter { it.accountId !in allowedAccounts }.map { it.id }.toSet() +
             page.messages.filter { message ->

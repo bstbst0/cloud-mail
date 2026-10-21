@@ -13,6 +13,7 @@ import java.util.UUID
 internal fun testEngine(handler: MockRequestHandler) = MockEngine(MockEngineConfig().apply { dispatcher = Dispatchers.Unconfined; addHandler(handler) })
 
 internal class TestPlatform(private val client: HttpClient, private val attachments: () -> List<OutgoingAttachment> = { emptyList() }) : PlatformServices {
+    override val cacheDispatcher = Dispatchers.Unconfined
     override val persistentSecureStorage = false
     private val secrets = mutableMapOf<String,String>()
     override fun httpClient() = client

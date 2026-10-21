@@ -6,6 +6,7 @@ import app.cash.sqldelight.db.SqlDriver
 import io.ktor.client.HttpClient
 
 interface PlatformServices {
+    val cacheDispatcher: kotlinx.coroutines.CoroutineDispatcher get() = kotlinx.coroutines.Dispatchers.Default
     val defaultServerUrl: String get() = ""
     val allowLocalHttp: Boolean get() = false
     val persistentSecureStorage: Boolean

@@ -120,6 +120,8 @@ class UiSmokeTest {
         onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
         screenshot("settings-compact-large-font")
         vm.compose()
+        waitUntil(timeoutMillis = 10_000) { vm.state.value.composer != null }
+        waitForIdle()
         onNodeWithText("Message").performScrollTo().assertIsDisplayed()
         onNodeWithText("Save & close").assertIsDisplayed()
         onNodeWithText("Send").assertIsDisplayed()
